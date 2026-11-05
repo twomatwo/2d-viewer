@@ -1,0 +1,17 @@
+.venv/
+.venv-camera/
+LabView-App/.venv/
+LabView-App/install/*.whl
+spinnaker_python*/
+spinnaker_python*.zip
+__pycache__/
+*.pyc
+.pytest_cache/
+captures/
+artifacts/
+*.log
+settings/
+logs/
+.build-tools/
+.package-build/
+release/

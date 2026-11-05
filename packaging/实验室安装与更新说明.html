@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>2D Viewer 实验室安装与更新说明</title>
+  <style>
+    :root { color-scheme: light; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #f3f5f7; color: #202832; font: 16px/1.75 "Microsoft YaHei", "Segoe UI", sans-serif; }
+    main { max-width: 920px; margin: 32px auto; padding: 32px 44px; background: #fff; border: 1px solid #dce2e8; border-radius: 8px; }
+    h1 { margin: 0 0 8px; font-size: 28px; line-height: 1.4; }
+    h2 { margin: 32px 0 12px; padding-bottom: 7px; border-bottom: 1px solid #dce2e8; font-size: 21px; }
+    h3 { margin: 20px 0 8px; font-size: 17px; }
+    p { margin: 10px 0; }
+    ol, ul { margin: 10px 0; padding-left: 25px; }
+    li { margin: 8px 0; }
+    code { padding: 2px 5px; border-radius: 3px; background: #edf1f5; font: 0.94em/1.6 Consolas, "Microsoft YaHei", monospace; overflow-wrap: anywhere; }
+    .intro { color: #526171; }
+    .note { padding: 12px 16px; border-left: 3px solid #35788a; background: #eef6f7; }
+    table { width: 100%; margin: 12px 0; border-collapse: collapse; text-align: left; }
+    th, td { padding: 10px 12px; border: 1px solid #dce2e8; vertical-align: top; }
+    th { background: #f3f5f7; font-weight: 600; }
+    @media (max-width: 640px) { main { margin: 0; padding: 24px 18px; border: 0; border-radius: 0; } h1 { font-size: 24px; } th, td { padding: 8px; } }
+    @media print { body { background: #fff; font-size: 11pt; } main { max-width: none; margin: 0; padding: 0; border: 0; } h2, h3 { break-after: avoid; } tr, .note { break-inside: avoid; } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>2D Viewer 实验室安装与更新说明</h1>
+  <p class="intro">适用：Windows 11 64 位 · FLIR Blackfly S BFS-U3-51S5C-C（USB3）<br>本次安装包：<code>2D-Viewer-Setup-0.10.2-x64.exe</code></p>
+  <p>将安装包和本说明复制到实验室电脑即可开始安装。安装包包含 Python、界面和图像处理依赖，以及配套的官方相机软件安装程序；实验室电脑无需另外安装 Python、SpinPython 或 VS Code，安装过程无需联网。</p>
+
+  <h2>首次安装</h2>
+  <ol>
+    <li>使用平时操作显微镜的 Windows 账户登录。退出 2D Viewer，并在 SpinView 中停止采集、断开相机连接。</li>
+    <li>双击 <code>2D-Viewer-Setup-0.10.2-x64.exe</code>，按安装向导继续。安装器检查 Spinnaker 运行库和 USB3 驱动；已存在匹配版本时跳过，缺少时启动随包附带的官方安装程序。安装驱动时可能需要管理员确认；若官方安装程序要求重启，先完成重启。</li>
+    <li>将相机直接接到电脑的 USB3／SS 接口，通过开始菜单或桌面的 <strong>2D Viewer</strong> 启动程序。如果没有自动连接，在“相机参数”中扫描并连接相机。</li>
+  </ol>
+  <p class="note">相机同一时间由一个程序使用。运行 2D Viewer 前，请先让 SpinView 或其他相机软件释放连接。</p>
+  <p>首次使用时检查画面、曝光、颜色和拍摄保存目录；测量前选择当前物镜，并检查对应标定是否有效。没有连接相机时，可以在主程序中用“打开图像…”查看、处理和标注已有图片。</p>
+
+  <h2>当前版本的常用操作</h2>
+  <ul>
+    <li>窗口上方只有一行工具栏。“设置”中可管理物镜和快捷键；工具栏的物镜下拉框用于选择实际使用的物镜。</li>
+    <li>右侧“相机参数”中的相机方案按物镜保存曝光、增益、白平衡、像素格式等相机参数，不包含“电脑处理”的调整。相机或采样配置改变时，检查标定是否仍匹配。</li>
+    <li>“拍照”填写文件名并选择位置；“快速保存”（默认 F9）直接使用右侧“拍摄保存”配置的目录和命名规则。两个按钮共用文件格式与标注选项，命名预览可检查日期、序号和物镜倍数。</li>
+    <li>PNG 保留电脑处理后的画面；原始 TIFF 保留传感器像素。TIFF 勾选标注时只在文件内部记录信息，不把标注绘入原始像素。</li>
+    <li>电脑处理页上下两个通道选择框同步；RGB 叠加时调节整体色阶。“恢复默认”可清除临时电脑处理，不修改相机参数或标定。</li>
+  </ul>
+
+  <h2>以后怎样更新</h2>
+  <p class="note">从 0.10.2 起，原 LabView 更名为 <strong>2D Viewer</strong>。直接运行新版安装包即可更新，原设置、物镜标定、相机方案和照片继续保留，无需先卸载。数据目录仍叫 <code>LabView</code>；从旧版更新时，程序也继续安装在原文件夹中。</p>
+  <ol>
+    <li>取得新版 <code>2D-Viewer-Setup-版本号-x64.exe</code>，复制到实验室电脑。</li>
+    <li>使用与上次相同的 Windows 账户，关闭 2D Viewer。建议先按下文方法备份设置和标定。</li>
+    <li>直接运行新版安装包，安装完成后重新打开 2D Viewer。<strong>不用先卸载旧版。</strong></li>
+    <li>确认保存目录和物镜标定仍正确，再继续使用。</li>
+  </ol>
+  <p>安装器更新程序文件，保留该 Windows 账户的设置、标定、照片和日志。已匹配的相机运行库和驱动会跳过安装。保存在其他磁盘或自选文件夹中的照片继续留在原处，不会被安装器移动。</p>
+
+  <h2>设置、照片在哪里，怎样备份</h2>
+  <p>在文件资源管理器的地址栏粘贴以下路径并按回车。<code>%LOCALAPPDATA%</code> 会自动指向当前 Windows 账户的本地数据目录。</p>
+  <table>
+    <thead><tr><th>内容</th><th>路径</th></tr></thead>
+    <tbody>
+      <tr><td>程序文件</td><td><code>%LOCALAPPDATA%\Programs\2D Viewer</code>（从旧版更新时沿用原安装目录）</td></tr>
+      <tr><td>设置和物镜标定</td><td><code>%LOCALAPPDATA%\LabView\settings\labview.json</code></td></tr>
+      <tr><td>默认照片／录像目录</td><td><code>%LOCALAPPDATA%\LabView\captures</code></td></tr>
+      <tr><td>运行和故障日志</td><td><code>%LOCALAPPDATA%\LabView\logs</code></td></tr>
+    </tbody>
+  </table>
+  <p><strong>备份：</strong>关闭 2D Viewer，将 <code>%LOCALAPPDATA%\LabView</code> 整个文件夹复制到备份位置。若照片保存在自选目录，也要单独备份那个目录。只需要标定时，可以使用测量页的“导出标定库”。</p>
+  <p><strong>恢复：</strong>关闭 2D Viewer，先保留一份当前设置，再把备份的 <code>labview.json</code> 复制回 <code>settings</code> 文件夹。重新打开程序后检查拍摄目录。</p>
+  <p>卸载程序也会保留以上用户数据。不同 Windows 账户各自保存设置和标定；换账户或换电脑时需要单独迁移。</p>
+
+  <h2>从之前的文件夹版本迁移</h2>
+  <p>如果此前用 <code>Start 2D Viewer.cmd</code> 启动，设置位于旧的 <code>LabView-App</code> 文件夹中。只有第一次换到安装版时需要以下步骤：</p>
+  <ol>
+    <li>关闭旧版 2D Viewer，备份旧文件 <code>LabView-App\settings\labview.json</code>。</li>
+    <li>安装新版，启动一次后关闭，让程序建立新的数据目录。</li>
+    <li>打开 <code>%LOCALAPPDATA%\LabView\settings</code>。先备份其中已有的 <code>labview.json</code>，再用旧文件替换它。</li>
+    <li>重新启动 2D Viewer，检查物镜标定和拍摄保存目录。旧电脑的盘符、文件夹在实验室电脑上可能不存在，需要重新选择。</li>
+  </ol>
+  <p>旧照片不会自动迁移：可以自行复制到新目录，也可以继续使用原来的照片目录。相机、采样方式或显微镜光路发生变化时，应重新核准对应标定；保存的“每像素长度”不能直接用于不同光学配置。</p>
+
+  <h2>遇到问题时</h2>
+  <h3>能打开程序，但找不到相机</h3>
+  <p>先关闭占用相机的其他软件，检查电源、相机线和 USB3／SS 接口，然后重新扫描。若仍找不到，关闭 2D Viewer，用官方 SpinView 检查；SpinView 也无法出图时，先处理驱动或连接问题。</p>
+  <h3>安装中需要管理员权限或重启</h3>
+  <p>这是官方相机驱动或系统运行库的安装要求。使用实验室允许的管理员账户完成驱动安装；重启后，用日常操作相机的 Windows 账户启动 2D Viewer。</p>
+  <h3>安装失败，或提示相机运行库版本不匹配</h3>
+  <p>本安装包配套 Spinnaker 4.4.0.246。先记录错误码并重启电脑，再运行安装包。如果电脑已安装其他版本的 Spinnaker，请先确认该版本是否被实验室其他程序使用，再由管理员处理版本兼容；不要直接删除已有驱动。安装日志通常位于当前账户的临时目录，在资源管理器中输入 <code>%TEMP%</code>，查找最新的 <code>Setup Log</code> 文件。</p>
+  <h3>换了电脑后无法保存，或标定显示不匹配</h3>
+  <p>重新选择当前电脑上可写入的拍摄目录。标定不匹配时，核对物镜、相机及采样设置，并为当前配置选择或重新建立标定。</p>
+  <h3>程序报错或闪退</h3>
+  <p>保留错误截图，并复制 <code>%LOCALAPPDATA%\LabView\logs</code> 中的日志；同时记录所用安装包的版本号，便于定位问题。不要为排查问题删除标定和照片。</p>
+</main>
+</body>
+</html>

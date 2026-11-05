@@ -1,0 +1,28 @@
+2D Viewer - bundled runtime components
+
+Python 3.12.2: https://www.python.org/downloads/release/python-3122/
+NumPy 2.5.3: https://numpy.org/
+OpenCV 4.11.0.86 (headless Python wheel): https://opencv.org/
+PySide6 Essentials and Shiboken6 6.12.0: https://www.qt.io/qt-for-python
+tifffile 2026.9.20: https://github.com/cgohlke/tifffile
+Spinnaker / PySpin 4.4.0.246: https://www.teledynevisionsolutions.com/products/spinnaker-sdk/
+PyInstaller 6.22.3 bootloader: https://pyinstaller.org/
+
+Original license files are retained in the adjacent component directories.
+The Spinnaker offline installer is retained unmodified inside Setup; its own
+runtime and driver installation is managed by the official installer.
+
+Qt and PySide are dynamically linked and distributed under the applicable
+open-source licenses. LGPLv3 and the GPL texts it references are in Qt/.
+Recipients may replace compatible Qt/PySide libraries and debug modifications
+to those libraries as permitted by their licenses. They remain separate DLLs.
+Corresponding upstream source for this version is available from:
+https://download.qt.io/archive/qt/6.12/6.12.0/submodules/
+https://code.qt.io/cgit/pyside/pyside-setup.git/tag/?h=v6.12.0
+https://code.qt.io/cgit/qt/qtbase.git/tag/?h=v6.12.0
+Qt third-party notices: https://doc.qt.io/qt-6/licenses-used-in-qt.html
+PySide notices: https://doc.qt.io/qtforpython-6/licenses.html
+
+The full upstream license texts copied into Qt/ came from:
+https://raw.githubusercontent.com/pyside/pyside-setup/v6.12.0/LICENSES/
+No third-party license or attribution is replaced by this inventory.

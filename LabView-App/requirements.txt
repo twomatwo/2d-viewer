@@ -1,0 +1,4 @@
+numpy==2.5.3
+opencv-python-headless==4.11.0.86
+PySide6-Essentials==6.12.0
+tifffile==2026.9.20
