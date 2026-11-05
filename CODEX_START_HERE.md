@@ -19,6 +19,8 @@ Windows 11 桌面显微相机软件，FLIR BFS-U3-51S5C-C（USB3）。原名 Lab
 
 ## 目录与入口
 
+- GitHub 远端：`https://github.com/twomatwo/2d-viewer.git`，发布分支 `main`，保留远端 README 初始化提交。首次上传使用当前源码快照；旧本地历史在 `local/pre-github`，含第三方 wheel，仅作本机备份，不要 `push --all` 或推送该分支。正式分支历史不含 wheel、开发环境、真实设置、照片、日志和离线安装器；本机依赖文件仍保留。
+
 - `LabView-App/labview/`：唯一的正式程序源码。入口 `python -m labview --connect`。默认设置、照片、日志均相对于正式程序目录，与启动时的工作目录无关。
 - `LabView-App/settings/labview.json`：真实相机设置和标定；`captures/`：用户照片；`logs/`：运行及原生故障日志。
 - `LabView-App/install/`：相机依赖说明和许可证。本机用户提供的官方 PySpin wheel（cp312、4.4.0.246）保留在此但不提交到 GitHub；克隆源码需自行获取匹配 wheel。完整 SDK 和驱动仍需要官方安装。
