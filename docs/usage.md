@@ -1,26 +1,23 @@
-# 2D Viewer 正式相机程序
+# 2D Viewer 源码安装与使用
 
-适用相机：FLIR Blackfly S BFS-U3-51S5C-C，Windows 11 x64。
-
-实验室日常安装和更新优先使用项目 `release` 中的安装 EXE 和《实验室安装与更新说明.html》，无需安装 Python。安装版数据在 `%LOCALAPPDATA%\LabView`，与本源码目录分开。
-
-以下保留源码版的安装与运行方法；本文件夹也可单独复制到其他开发电脑。
+适用相机：FLIR Blackfly S BFS-U3-51S5C-C，Windows 11 x64。源码包为根目录的 `twodviewer/`，无需进入额外的 App 子目录。
 
 ## 首次安装
 
-1. 安装官方 Spinnaker SDK 4.4.0.246 和相机驱动，确认 SpinView 能出图。
-2. 安装 Python 3.12 x64，并安装 Python Launcher（`py` 命令）。
-3. 在本文件夹打开 PowerShell，运行：
+1. 安装匹配的 Spinnaker SDK、USB3 驱动和 Python 3.12 x64，详见 [相机依赖说明](camera-dependencies.md)。
+2. 准备官方 PySpin wheel，放在根目录 `dependencies/`，或使用 `-PySpinWheel` 指定其位置。
+3. 在**仓库根目录**打开 PowerShell，执行：
 
    ```powershell
    powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\setup.ps1
    ```
 
-   安装需要联网下载界面和图像处理依赖；运行前请从官方获取匹配的 PySpin wheel，放入 `install`（详见 `install/README.md`），或通过 `-PySpinWheel "C:\路径\spinnaker_python-4.4.0.246-cp312-cp312-win_amd64.whl"` 指定。官方安装文件不随 GitHub 源码分发。也可用 `-Python "C:\路径\python.exe"` 指定 Python 3.12。安装脚本创建本文件夹下的 `.venv`。
+   可用 `-Python "C:\路径\python.exe"` 指定 Python，`-PySpinWheel "C:\路径\spinnaker_python-4.4.0.246-cp312-cp312-win_amd64.whl"` 指定 wheel。脚本在根目录创建 `.venv` 并按 `requirements.txt` 安装依赖。本机已有 `.venv-camera` 可继续由启动脚本使用。
+4. 在 SpinView 中停止采集，双击根目录 `Start 2D Viewer.cmd`；也可执行 `python -m twodviewer --connect`。离线启动使用 `python -m twodviewer --no-connect`。
 
-4. 在 SpinView 中停止采集并断开相机，双击本文件夹中的 `Start 2D Viewer.cmd`。
+源码版新数据默认在根目录 `data/`；已有 `LabView-App` 数据目录自动保留原位使用。新配置名为 `settings/twodviewer.json`，旧 `settings/labview.json` 继续兼容；显式 `--data-directory` 优先。安装版数据仍在 `%LOCALAPPDATA%\LabView`，与源码目录分开。所有数据与依赖目录均不上传 GitHub。
 
-## 标注布局（源码版 0.14.0）
+## 标注布局（源码版 0.14.1）
 
 顶栏“移动视野”和“选择标注”用于切换鼠标模式。点击“选择标注”会打开右侧标注页，即使当前已是选择模式也能重新打开；测量长度、面积、标记点、文字、线条、矩形、椭圆、画笔及图片导入统一在该页操作。
 
@@ -102,7 +99,7 @@
 
 删除快捷键在图像区域获得焦点时生效。输入框内的字母、数字和空格用于正常输入；弹窗内按键由弹窗处理。快捷键仅在本程序内生效，按住不重复触发。清空全部标注、重置处理参数和修改标定没有默认快捷键。
 
-本机已准备的官方 PySpin wheel 约 67 MB，放在 `install`，由 Git 忽略；完成安装后可移走留作备份。Python、Qt、OpenCV、NumPy 和相机 SDK 的运行依赖仍需占用数百 MB，它们是正式程序运行所需。
+本机已准备的官方 PySpin wheel 约 67 MB，放在本机旧 `LabView-App/install`，由 Git 忽略；完成安装后可移走留作备份。Python、Qt、OpenCV、NumPy 和相机 SDK 的运行依赖仍需占用数百 MB，它们是正式程序运行所需。
 
 本机开发目录的运行脚本会复用父目录已有的 `.venv-camera`；单独部署时优先使用本文件夹通过安装脚本创建的 `.venv`。
 

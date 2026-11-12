@@ -5,7 +5,11 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-Location -LiteralPath $PSScriptRoot
 if (-not $PySpinWheel) {
-    $PySpinWheel = Join-Path $PSScriptRoot 'install\spinnaker_python-4.4.0.246-cp312-cp312-win_amd64.whl'
+    $PySpinWheel = Join-Path $PSScriptRoot 'dependencies\spinnaker_python-4.4.0.246-cp312-cp312-win_amd64.whl'
+    if (-not (Test-Path -LiteralPath $PySpinWheel)) {
+        $legacyWheel = Join-Path $PSScriptRoot 'LabView-App\install\spinnaker_python-4.4.0.246-cp312-cp312-win_amd64.whl'
+        if (Test-Path -LiteralPath $legacyWheel) { $PySpinWheel = $legacyWheel }
+    }
 }
 $wheelPath = (Resolve-Path -LiteralPath $PySpinWheel).Path
 $environmentPath = Join-Path $PSScriptRoot '.venv'

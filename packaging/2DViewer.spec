@@ -12,8 +12,8 @@ from PyInstaller.utils.win32.versioninfo import (
 
 packaging = Path(SPECPATH)
 root = packaging.parent
-source = root / "LabView-App"
-version_line = next(line for line in (source / "labview" / "__init__.py").read_text(encoding="utf-8").splitlines()
+source = root
+version_line = next(line for line in (source / "twodviewer" / "__init__.py").read_text(encoding="utf-8").splitlines()
                     if line.startswith("__version__"))
 version = ast.literal_eval(version_line.split("=", 1)[1].strip())
 version_tuple = tuple(map(int, version.split("."))) + (0,)
@@ -22,7 +22,7 @@ sdk = Path(get_package_paths("PySpin")[1])
 # PySpin loads CTI/property files dynamically, in addition to its native DLLs.
 datas = [(str(path), "PySpin") for path in sdk.iterdir()
          if path.suffix.lower() in (".cti", ".property")]
-datas.append((str(source / "install" / "licenses"), "licenses/Spinnaker"))
+datas.append((str(root / "docs" / "licenses" / "Spinnaker"), "licenses/Spinnaker"))
 for distribution in ("numpy", "opencv-python-headless", "PySide6-Essentials",
                      "shiboken6", "tifffile", "pyinstaller"):
     dist = metadata.distribution(distribution)

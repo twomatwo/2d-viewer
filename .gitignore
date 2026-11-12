@@ -1,7 +1,5 @@
 .venv/
 .venv-camera/
-LabView-App/.venv/
-LabView-App/install/*.whl
 spinnaker_python*/
 spinnaker_python*.zip
 __pycache__/
@@ -16,3 +14,9 @@ logs/
 .package-build/
 release/
 recovery/
+
+# Local data from the pre-flattening source layout; never publish.
+/LabView-App/
+/data/
+/dependencies/
+*.whl

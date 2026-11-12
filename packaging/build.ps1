@@ -6,7 +6,7 @@
 )
 $ErrorActionPreference = 'Stop'
 $projectRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
-$sourceRoot = Join-Path $projectRoot 'LabView-App'
+$sourceRoot = $projectRoot
 if (-not $Python) { $Python = Join-Path $projectRoot '.venv-camera\Scripts\python.exe' }
 if (-not $ISCC) {
     $ISCC = Join-Path $projectRoot '.build-tools\InnoSetup\ISCC.exe'
@@ -26,7 +26,7 @@ $signature = Get-AuthenticodeSignature -LiteralPath $sdk.FullName
 if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'FLIR') {
     throw 'Spinnaker installer signature validation failed.'
 }
-$versionMatch = Select-String -LiteralPath (Join-Path $sourceRoot 'labview\__init__.py') -Pattern '^__version__ = "([^"]+)"$'
+$versionMatch = Select-String -LiteralPath (Join-Path $sourceRoot 'twodviewer\__init__.py') -Pattern '^__version__ = "([^"]+)"$'
 $appVersion = $versionMatch.Matches[0].Groups[1].Value
 if ($appVersion -notmatch '^\d+\.\d+\.\d+$') { throw 'Expected a three-part application version.' }
 $buildRoot = Join-Path $projectRoot '.package-build'

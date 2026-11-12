@@ -65,21 +65,21 @@
     <thead><tr><th>内容</th><th>路径</th></tr></thead>
     <tbody>
       <tr><td>程序文件</td><td><code>%LOCALAPPDATA%\Programs\2D Viewer</code>（从旧版更新时沿用原安装目录）</td></tr>
-      <tr><td>设置和物镜标定</td><td><code>%LOCALAPPDATA%\LabView\settings\labview.json</code></td></tr>
+      <tr><td>设置和物镜标定</td><td><code>%LOCALAPPDATA%\LabView\settings\twodviewer.json</code></td></tr>
       <tr><td>默认照片／录像目录</td><td><code>%LOCALAPPDATA%\LabView\captures</code></td></tr>
       <tr><td>运行和故障日志</td><td><code>%LOCALAPPDATA%\LabView\logs</code></td></tr>
     </tbody>
   </table>
   <p><strong>备份：</strong>关闭 2D Viewer，将 <code>%LOCALAPPDATA%\LabView</code> 整个文件夹复制到备份位置。若照片保存在自选目录，也要单独备份那个目录。只需要标定时，可以使用测量页的“导出标定库”。</p>
-  <p><strong>恢复：</strong>关闭 2D Viewer，先保留一份当前设置，再把备份的 <code>labview.json</code> 复制回 <code>settings</code> 文件夹。重新打开程序后检查拍摄目录。</p>
+  <p><strong>恢复：</strong>关闭 2D Viewer，先保留一份当前设置，再把备份的 <code>twodviewer.json</code>（旧版为 <code>labview.json</code>）复制回 <code>settings</code> 文件夹。重新打开程序后检查拍摄目录。</p>
   <p>卸载程序也会保留以上用户数据。不同 Windows 账户各自保存设置和标定；换账户或换电脑时需要单独迁移。</p>
 
   <h2>从之前的文件夹版本迁移</h2>
-  <p>如果此前用 <code>Start 2D Viewer.cmd</code> 启动，设置位于旧的 <code>LabView-App</code> 文件夹中。只有第一次换到安装版时需要以下步骤：</p>
+  <p>如果此前用 <code>Start 2D Viewer.cmd</code> 启动，旧设置位于 <code>LabView-App</code> 文件夹中；新克隆源码版位于 <code>data</code> 中。只有第一次换到安装版时需要以下步骤：</p>
   <ol>
     <li>关闭旧版 2D Viewer，备份旧文件 <code>LabView-App\settings\labview.json</code>。</li>
     <li>安装新版，启动一次后关闭，让程序建立新的数据目录。</li>
-    <li>打开 <code>%LOCALAPPDATA%\LabView\settings</code>。先备份其中已有的 <code>labview.json</code>，再用旧文件替换它。</li>
+    <li>打开 <code>%LOCALAPPDATA%\LabView\settings</code>。先备份其中已有的 <code>labview.json</code>，再将旧文件复制为 <code>twodviewer.json</code>（已有旧版 <code>labview.json</code> 也继续识别）。</li>
     <li>重新启动 2D Viewer，检查物镜标定和拍摄保存目录。旧电脑的盘符、文件夹在实验室电脑上可能不存在，需要重新选择。</li>
   </ol>
   <p>旧照片不会自动迁移：可以自行复制到新目录，也可以继续使用原来的照片目录。相机、采样方式或显微镜光路发生变化时，应重新核准对应标定；保存的“每像素长度”不能直接用于不同光学配置。</p>

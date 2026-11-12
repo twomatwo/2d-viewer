@@ -20,7 +20,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\packaging\build.ps1 -S
 
 默认构建完成会删除 `.package-build` 临时目录；只有调查打包问题时使用 `-KeepBuild` 保留。实验室更新程序只需运行新版安装器，不需要在实验室执行本构建脚本。
 
-应用版本取自 `LabView-App/labview/__init__.py`。发布新版前先更新该版本，并保持安装器的 **AppId 固定**，让新版识别并覆盖现有安装。
+应用版本取自 `twodviewer/__init__.py`。发布新版前先更新该版本，并保持安装器的 **AppId 固定**，让新版识别并覆盖现有安装。
 
 最终交付目录为项目根目录下的 `release`。当前交付文件为：
 
@@ -35,11 +35,11 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\packaging\build.ps1 -S
 | 内容 | 安装版路径 |
 | --- | --- |
 | 程序文件 | `%LOCALAPPDATA%\Programs\2D Viewer` |
-| 设置和标定 | `%LOCALAPPDATA%\LabView\settings\labview.json` |
+| 设置和标定 | `%LOCALAPPDATA%\LabView\settings\twodviewer.json`（已有 labview.json 继续使用） |
 | 默认照片与录像 | `%LOCALAPPDATA%\LabView\captures` |
 | 日志 | `%LOCALAPPDATA%\LabView\logs` |
 
-0.10.2 将原 LabView 更名为 2D Viewer。新装使用上表的 `Programs\2D Viewer`，覆盖旧版沿用原安装位置（通常是 `Programs\LabView`）。安装器 AppId 不变，更新安装项和快捷方式名称，移除本程序的旧 EXE；清理旧快捷方式前核对目标，避免影响其他同名软件。`%LOCALAPPDATA%\LabView`、`labview.json`、内部 Python 模块名和文件格式标识保留，以继续读取旧设置、标定、相机方案和照片。项目目录名称不影响程序显示名称。
+0.10.2 将原 LabView 更名为 2D Viewer。新装使用上表的 `Programs\2D Viewer`，覆盖旧版沿用原安装位置（通常是 `Programs\LabView`）。安装器 AppId 不变，更新安装项和快捷方式名称，移除本程序的旧 EXE；清理旧快捷方式前核对目标，避免影响其他同名软件。`%LOCALAPPDATA%\LabView`、`labview.json`、文件格式标识保留，Python 包现为 `twodviewer`，以继续读取旧设置、标定、相机方案和照片。项目目录名称不影响程序显示名称。
 
 安装按当前 Windows 用户进行。相机驱动和系统运行库可能需要管理员权限。安装器检查匹配的 Spinnaker 运行库和 USB3 驱动，已安装时跳过；缺少时运行随包提供的官方安装程序。
 
@@ -61,6 +61,6 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\packaging\build.ps1 -S
 
 ## 源码版迁移
 
-旧源码版使用 `LabView-App/settings/labview.json`。安装版首次启动并关闭后，可在备份现有数据的前提下将旧设置复制到 `%LOCALAPPDATA%\LabView\settings\labview.json`。检查其中保存的拍摄目录，避免保留另一台电脑不存在的盘符。照片由用户自行复制或继续使用原目录。
+新源码版使用 `data/settings/twodviewer.json`；旧源码版使用 `LabView-App/settings/labview.json`。安装版首次启动并关闭后，可在备份现有数据的前提下将旧设置复制到 `%LOCALAPPDATA%\LabView\settings\twodviewer.json`（已有 labview.json 继续使用）。检查其中保存的拍摄目录，避免保留另一台电脑不存在的盘符。照片由用户自行复制或继续使用原目录。
 
 标定与相机、采样和实际光路有关；数据迁移不代表新配置已完成标定。实验室操作步骤见同目录 HTML 文档。

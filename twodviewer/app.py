@@ -13,17 +13,27 @@ from . import APP_NAME, __version__
 def default_data_directory() -> Path:
     """Keep installed data in the legacy location so renaming preserves settings."""
     if not getattr(sys, "frozen", False):
-        return Path(__file__).resolve().parents[1]
+        root = Path(__file__).resolve().parents[1]
+        legacy = root / "LabView-App"
+        if any((legacy / name).is_dir() for name in ("settings", "captures", "recovery")):
+            return legacy
+        return root / "data"
     from PySide6.QtCore import QStandardPaths
     return Path(QStandardPaths.writableLocation(
         QStandardPaths.StandardLocation.GenericDataLocation)) / "LabView"
+
+
+def default_settings_path(data_directory: Path) -> Path:
+    current = data_directory / "settings" / "twodviewer.json"
+    legacy = data_directory / "settings" / "labview.json"
+    return legacy if not current.exists() and legacy.exists() else current
 
 
 def run(window_class, data_directory: Path, *, connect: bool = False, name: str = APP_NAME) -> int:
     """Run one application with its own settings, captures and logs."""
     log_directory = data_directory / "logs"
     log_directory.mkdir(parents=True, exist_ok=True)
-    handlers = [RotatingFileHandler(log_directory / "labview.log", maxBytes=2_000_000,
+    handlers = [RotatingFileHandler(log_directory / "twodviewer.log", maxBytes=2_000_000,
                                     backupCount=2, encoding="utf-8")]
     if sys.stderr is not None:
         handlers.append(logging.StreamHandler(sys.stderr))

@@ -1,10 +1,10 @@
 # 2D Viewer 开发入口
 
-Windows 11 桌面显微相机软件，FLIR BFS-U3-51S5C-C（USB3）。原名 LabView，当前产品名 2D Viewer。只维护主程序；未连接相机时使用主程序“打开图像…”进行离线查看、处理、标注和测量。当前源码版本为 0.14.0，交付安装包仍为 0.10.2；后续修改源码不自动重建安装包。
+Windows 11 桌面显微相机软件，FLIR BFS-U3-51S5C-C（USB3）。原名 LabView，当前产品名 2D Viewer。只维护主程序；未连接相机时使用主程序“打开图像…”进行离线查看、处理、标注和测量。当前源码版本为 0.14.1，交付安装包仍为 0.10.2；后续修改源码不自动重建安装包。
 
 ## 用户明确约束
 
-- **2026-11-05 更名要求**：产品统一称为 2D Viewer，避免与其他 LabView 软件重名。窗口、应用名称、EXE、安装器、快捷方式、文档使用新名；保留内部模块、历史数据路径和序列化格式兼容。旧版安装器 AppId 不变，升级沿用安装路径并保留所有数据。
+- **2026-11-05 更名要求**：产品统一称为 2D Viewer，避免与其他 LabView 软件重名。窗口、应用名称、EXE、安装器、快捷方式、文档使用新名；2026-11-12 用户确认源码包改为 `twodviewer` 并扁平化；历史数据路径和序列化格式继续兼容。旧版安装器 AppId 不变，升级沿用安装路径并保留所有数据。
 
 - 算法和底层功能优先调用成熟库、官方 SDK 或复用已有的可靠实现，例如 OpenCV 图像处理和官方相机接口；不要自行重写已有的高效算法。自写代码主要负责界面、参数关联和流程衔接。只有现成实现无法满足明确需求时，才编写必要的自定义部分，并验证正确性和实际性能。
 - 不主动增加未要求的可见功能。图像下方只显示相机 FPS、实际绘制 FPS，以及图像尺寸、格式、曝光、增益、坐标和 RGB；不要帧序号、接收 FPS、处理中间 FPS、耗时、对焦分数。
@@ -15,24 +15,28 @@ Windows 11 桌面显微相机软件，FLIR BFS-U3-51S5C-C（USB3）。原名 Lab
 - **2026-10-26 参数方案要求**：用于 RGB 标定二维材料厚度，物镜方案只保存相机成像参数（包含模式和通道选择器值），不保存电脑处理。自动曝光／增益／白平衡的开关参与比较，自动输出数值不参与；临时打开原保存为关闭的自动模式必须显示修改。恢复手动方案必须同时恢复关闭状态及原数值。电脑处理自动保存为应用偏好（2026-11-11 用户更新要求），提供完整“恢复默认”，保留原来仅重置色阶／Gamma 的按钮语义。
 - **2026-10-27 拍照保存要求**：顶栏保留“拍照”和“快速保存”两个按钮。“拍照”只弹出位置／文件名选择，文件名由用户填写；“快速保存”使用右侧目录及命名规则。两者的 PNG／原始 TIFF 和标注选项统一来自“拍摄保存”页，不能再弹出旧的格式／标注设置对话框。命名模板可自由组合日期、时间、序号、物镜倍率及样品文字，配置日期格式、序号位数、下一编号、步长和每日重置，并提供实时预览。默认 F9 快速保存，旧快捷键 ID 保持兼容。拍摄记录嵌入图像，不自动产生 JSON 附件。
 - **最新用户要求：删除 Demo 程序和启动入口，不再维护或恢复模拟相机。离线使用由主程序打开图片完成；相机连接失败不得切换模拟。**
-- 实验室交付 `release` 中的安装 EXE 和 HTML 安装／更新说明；源码仍只有 `LabView-App/labview`。不要重新堆积旧环境、测试图片、SDK 文档或旧版打包副本。验证用临时文件并清理，只保留本次成品和可重复构建所需脚本。
+- 实验室交付 `release` 中的安装 EXE 和 HTML 安装／更新说明；源码只有根目录的 `twodviewer`。不要重新堆积旧环境、测试图片、SDK 文档或旧版打包副本。验证用临时文件并清理，只保留本次成品和可重复构建所需脚本。
 
 ## 目录与入口
 
 - GitHub 远端：`https://github.com/twomatwo/2d-viewer.git`，发布分支 `main`，保留远端 README 初始化提交。首次上传使用当前源码快照；旧本地历史在 `local/pre-github`，含第三方 wheel，仅作本机备份，不要 `push --all` 或推送该分支。正式分支历史不含 wheel、开发环境、真实设置、照片、日志和离线安装器；本机依赖文件仍保留。
 
-- `LabView-App/labview/`：唯一的正式程序源码。入口 `python -m labview --connect`。默认设置、照片、日志均相对于正式程序目录，与启动时的工作目录无关。
-- `LabView-App/settings/labview.json`：真实相机设置和标定；`captures/`：用户照片；`logs/`：运行及原生故障日志。
-- `LabView-App/install/`：相机依赖说明和许可证。本机用户提供的官方 PySpin wheel（cp312、4.4.0.246）保留在此但不提交到 GitHub；克隆源码需自行获取匹配 wheel。完整 SDK 和驱动仍需要官方安装。
-- 根目录 `Start 2D Viewer.cmd` 启动主程序；旧名命令保留为兼容转发。本机依赖使用 `.venv-camera/Scripts/python.exe`。正式文件夹单独部署后由 `setup.ps1` 创建本地 `.venv`，不依赖父目录。
+- `twodviewer/`：唯一的正式程序源码。入口 `python -m twodviewer --connect`，离线 `--no-connect`；根目录 `Start 2D Viewer.cmd`、`run.ps1`、`setup.ps1` 和 `requirements.txt`。不再保留额外 App 源码目录或旧名启动文件。
+- 新克隆源码版默认数据在根目录 `data/`；若检测到旧 `LabView-App/settings`、`captures` 或 `recovery` 目录，则继续使用其原位数据。安装版数据仍为 `%LOCALAPPDATA%\LabView`。新配置为 `settings/twodviewer.json`，若不存在且旧 `settings/labview.json` 存在则继续使用旧文件，显式 settings_path 优先；不复制、删除或批量改写真实用户数据。
+- `docs/usage.md`：源码使用说明；`docs/camera-dependencies.md`：官方相机依赖；`docs/licenses/Spinnaker/`：SDK 许可证。新 wheel 放到忽略的 `dependencies/`；本机旧 `LabView-App/install` wheel 继续保留并可由 setup 默认回退使用，明确指定 wheel 时不得回退。
+- 本机依赖继续使用 `.venv-camera/Scripts/python.exe`，根目录 setup 可创建 `.venv`。本机旧目录的 run.ps1 仅作不纳入 Git 的转发，以兼容已有外部调用；旧目录整体由 Git 忽略。根目录、打包入口和桌面源码快捷方式使用新包名。
 - 本机打包环境：Python 3.12.14 x64、Spinnaker/PySpin 4.4.0.246。不要安装 PyPI 同名 PySpin。
 - `packaging/build.ps1` 用 PyInstaller 6.22.3 和 Inno Setup 6.7.3 构建安装 EXE。完整官方离线包已缓存到 `.build-tools\Spinnaker\SpinnakerSDK_FULL_4.4.0.246_x64.exe`（原 D 盘路径已失效），从旧安装包恢复，FLIR 数字签名及 4.4.0.246 版本检查通过；相机运行库和 USB3 驱动已匹配则跳过安装。
-- 安装器为 `packaging/2DViewer.iss`，PyInstaller 规格为 `packaging/2DViewer.spec`，AppId 固定为 `{349B7837-9981-480E-A5DA-A12753686DC7}`。新装程序到 `%LOCALAPPDATA%\Programs\2D Viewer`，更新旧版沿用原安装位置。EXE 为 `2D Viewer.exe`，快捷方式和卸载显示名为 2D Viewer。设置／标定／照片／日志继续在 `%LOCALAPPDATA%\LabView`；更新和卸载不得删除该数据目录。内部 `labview` 模块、配置文件名和 schema、PNG 元数据键保持兼容，不能为更名批量替换。打包不能包含开发机的设置、照片或日志。
+- 安装器为 `packaging/2DViewer.iss`，PyInstaller 规格为 `packaging/2DViewer.spec`，AppId 固定为 `{349B7837-9981-480E-A5DA-A12753686DC7}`。新装程序到 `%LOCALAPPDATA%\Programs\2D Viewer`，更新旧版沿用原安装位置。EXE 为 `2D Viewer.exe`，快捷方式和卸载显示名为 2D Viewer。设置／标定／照片／日志继续在 `%LOCALAPPDATA%\LabView`；更新和卸载不得删除该数据目录。源码包已统一为 `twodviewer`；旧 schema、PNG 元数据键及旧配置文件兼容读取，不能为更名批量替换历史文件内容。打包不能包含开发机的设置、照片或日志。
 - 安装版默认连接真实相机；`--no-connect` 离线启动，`--data-directory` 可明确指定数据目录，`--version` 查询版本。源码版仍由 `--connect` 决定连接，数据位置不变。
 
 2026-10-27 源码 0.9.1 布局检查：27 项隔离 Qt 检查通过，覆盖菜单栏移除、唯一常用工具栏、设置和物镜下拉框位置、右侧参数控件归属、物镜选择同步、保存／恢复及自动曝光修改判定。1050 和 1480 宽窗口均保留一行 50 px 工具栏，设置和物镜下拉可见；已检查离屏实际绘制和全部 Python 语法。本次使用临时数据和采集命令替身，未操作真实相机或用户配置，未重建安装包；临时脚本和截图清理。
 
 ## 核心实现
+
+0.14.1（2026-11-12）用户确认源码包统一更名为 twodviewer 并去掉 LabView-App 外层。根目录直接包含包、启动和安装脚本、依赖列表；使用说明与 SDK 许可证集中到 docs，启动及 PyInstaller／Inno 构建路径同步更新。界面名称仍为 2D Viewer。新源码数据使用 data，检测到本机旧数据目录则原位复用；新配置 twodviewer.json 与旧 labview.json 兼容，日志及临时写入前缀采用新名。旧序列化 schema、PNG LabView 键、安装器 AppId 及安装版历史数据位置为兼容标识，刻意保留。旧章节中的 LabView-App/labview 路径均为历史记录，以本节及“目录与入口”为准。
+
+65 项更名隔离检查通过：所有 Python 模块新包名导入和语法、根目录和模拟全新克隆 CLI、打包入口、现有／新数据位置和配置优先级、GUI 测量／组合 PNG、旧 PNG 元数据键、文档相对链接、构建源码／版本／许可证路径；根目录启动／安装／打包及本机兼容转发 PowerShell 语法均通过。桌面“2D Viewer（源码版）”快捷方式改为根目录工作目录及 `-m twodviewer --connect`。验证使用临时配置，没有连接相机或迁移／改写真实设置，未重建安装包。
 
 0.14.0（2026-11-12）测量与绘图分区：顶部选择／撤销／重做，下方“测量”三列为长度、角度、面积；“绘图标注”四列两行包含矩形、椭圆、线条、独立多边形、点、文字、画笔、图片。保持旧 polygon kind 与 tool_polygon／G 为面积测量，新 polygon_shape kind 仅闭合轮廓；新增 angle kind，依次三点以第二点为顶点，用向量 atan2 计算 0–180 度，绘制两臂、端点、圆弧及三位小数读数。角度无需长度标定，保留创建倍率。新工具快捷键 ID 可配置，默认无新增绑定。逐点工具随鼠标预览边线，右键完成多边形／取消角度，Esc 取消。
 

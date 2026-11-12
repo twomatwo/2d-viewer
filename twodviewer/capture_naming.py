@@ -100,7 +100,7 @@ def available_capture_path(directory: Path, settings: dict, now: datetime,
 def write_snapshot(path: Path, writer, *, overwrite=False) -> None:
     """Publish only a complete image; automatic saves never replace a file."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, filename = tempfile.mkstemp(prefix=".labview-", suffix=path.suffix, dir=path.parent)
+    descriptor, filename = tempfile.mkstemp(prefix=".twodviewer-", suffix=path.suffix, dir=path.parent)
     os.close(descriptor)
     temporary = Path(filename)
     try:

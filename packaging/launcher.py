@@ -1,7 +1,7 @@
 """Entry point for the Windows application bundle."""
 from multiprocessing import freeze_support
 
-from labview.__main__ import main
+from twodviewer.__main__ import main
 
 
 if __name__ == "__main__":

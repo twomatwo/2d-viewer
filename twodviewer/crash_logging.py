@@ -16,7 +16,7 @@ def install_crash_logging(directory: Path) -> None:
     global _crash_fd
     if _crash_fd is not None:
         return
-    path = directory / "labview-crash.log"
+    path = directory / "twodviewer-crash.log"
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
     try:
         header = (f"\n--- {datetime.now().isoformat(timespec='seconds')} "

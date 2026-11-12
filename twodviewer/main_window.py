@@ -33,7 +33,7 @@ from .recovery import AnnotationRecovery
 from .image_assets import load_image_asset
 from .image_annotation_dialog import ImageAnnotationDialog
 from .annotation_icons import annotation_icon
-from .app import default_data_directory
+from .app import default_data_directory, default_settings_path
 from . import APP_NAME, __version__
 
 
@@ -105,7 +105,7 @@ class MainWindow(AnnotationRecovery, CameraControls, CameraProfileControls, Prof
         self.setMinimumSize(1050, 700)
         self.setStyleSheet(STYLE)
         self.data_directory = Path(data_directory or (settings_path.parent if settings_path else default_data_directory()))
-        self.store = SettingsStore(settings_path or self.data_directory / "settings" / "labview.json")
+        self.store = SettingsStore(settings_path or default_settings_path(self.data_directory))
         self._init_profile_state()
         self.capture_directory = Path(self.store.data["preferences"].get("capture_directory", str(self.data_directory / "captures")))
         self.snapshot_format = self.store.data["preferences"].get("snapshot_format", "png")
