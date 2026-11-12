@@ -24,7 +24,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\packaging\build.ps1 -S
 
 最终交付目录为项目根目录下的 `release`。当前交付文件为：
 
-- `2D-Viewer-Setup-0.10.2-x64.exe`
+- `2D-Viewer-Setup-0.14.1-x64.exe`
 - `实验室安装与更新说明.html`
 - `SHA256SUMS.txt`（安装包校验值，可选保留）
 
@@ -64,3 +64,10 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\packaging\build.ps1 -S
 新源码版使用 `data/settings/twodviewer.json`；旧源码版使用 `LabView-App/settings/labview.json`。安装版首次启动并关闭后，可在备份现有数据的前提下将旧设置复制到 `%LOCALAPPDATA%\LabView\settings\twodviewer.json`（已有 labview.json 继续使用）。检查其中保存的拍摄目录，避免保留另一台电脑不存在的盘符。照片由用户自行复制或继续使用原目录。
 
 标定与相机、采样和实际光路有关；数据迁移不代表新配置已完成标定。实验室操作步骤见同目录 HTML 文档。
+
+
+## GitHub 发布
+
+0.14.1 安装包、HTML 安装说明和 SHA256SUMS.txt 发布于 [GitHub Releases](https://github.com/twomatwo/2d-viewer/releases/tag/v0.14.1)，二进制不提交到 main 源码目录。
+
+Qt 6.12 在本项目目标 Windows 11 上使用系统 ICU。构建规格会排除宿主 PATH 中的同名 icuuc.dll 及 icudt 数据 DLL，避免误收集 Poppler 依赖导致 QtCore 加载失败。发布前须验证实际成品 EXE 离线启动，并使用打包归档与原生库验证主要 GUI／导出路径，不能仅测试源码。

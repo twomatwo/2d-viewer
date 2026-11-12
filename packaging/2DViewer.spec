@@ -50,6 +50,14 @@ a = Analysis(
     excludes=["tkinter", "pytest", "unittest", "IPython", "matplotlib", "scipy"],
     noarchive=False,
 )
+# Qt 6.12 uses the unversioned ICU API supplied by supported Windows systems.
+# A foreign Poppler ICU on the build host PATH has the same DLL name but
+# version-suffixed exports; bundling it prevents QtCore from loading.
+# Let Windows resolve its own ICU instead of copying build-host ICU binaries.
+a.binaries = [entry for entry in a.binaries
+              if Path(entry[0]).name.lower() != "icuuc.dll"
+              and not (Path(entry[0]).name.lower().startswith("icudt")
+                       and Path(entry[0]).suffix.lower() == ".dll")]
 pyz = PYZ(a.pure)
 version_info = VSVersionInfo(
     ffi=FixedFileInfo(filevers=version_tuple, prodvers=version_tuple, mask=0x3F,

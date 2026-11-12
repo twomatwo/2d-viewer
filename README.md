@@ -2,14 +2,14 @@
 
 面向二维材料研究的显微相机软件，支持 FLIR 相机采集、图像处理、标注和测量。
 
-源码包统一命名为 `twodviewer`，位于仓库根目录。程序显示名称为 **2D Viewer**。当前源码版 **0.14.1**，现有安装包仍为 0.10.2。
+源码包统一命名为 `twodviewer`，位于仓库根目录。程序显示名称为 **2D Viewer**。当前源码与 Windows 安装版均为 **0.14.1**。安装包和安装说明见 [GitHub Releases](https://github.com/twomatwo/2d-viewer/releases/tag/v0.14.1)。
 
 ## 快速开始
 
 - 本机源码版：双击根目录 `Start 2D Viewer.cmd`。
 - 新电脑：按 [源码使用说明](docs/usage.md) 安装依赖，然后运行启动脚本。
 - 离线使用：在主程序中打开图像，或在已配置环境中运行 `python -m twodviewer --no-connect`。
-- 实验室安装：使用已构建的安装包；构建方式见 [打包说明](packaging/README.md)。
+- 实验室安装：下载 [最新 Windows 安装包](https://github.com/twomatwo/2d-viewer/releases/download/v0.14.1/2D-Viewer-Setup-0.14.1-x64.exe)，无需安装 Python；构建方式见 [打包说明](packaging/README.md)。
 
 ## 仓库结构
 
