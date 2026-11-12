@@ -35,12 +35,14 @@ class CameraControls:
         self.discovery.start()
 
     def _devices_found(self, devices):
+        previous = self.source_combo.currentData()
         with QSignalBlocker(self.source_combo):
             self.source_combo.clear()
-            self.source_combo.addItem("自动选择 BFS-U3-51S5C", "")
+            self.source_combo.addItem("自动选择（仅一台相机时）", "")
             for device in devices:
                 self.source_combo.addItem(f"{device['model']} · {device['serial']}", device["serial"])
-            if devices: self.source_combo.setCurrentIndex(1)
+            index = self.source_combo.findData(previous) if previous else -1
+            self.source_combo.setCurrentIndex(index if index >= 0 else 1 if len(devices) == 1 else 0)
 
     def _discovery_finished(self):
         self.discovery.deleteLater()
@@ -51,6 +53,8 @@ class CameraControls:
 
     def _connected(self, description):
         self.source_badge.setText(description["model"])
+        from . import APP_NAME, __version__
+        self.setWindowTitle(f"{APP_NAME} {__version__} · {description['model']}")
         label = f"{description['model']} · {description['serial']}"
         values = description["settings"]
         speed = values.get("U3VCurrentSpeed")
@@ -70,9 +74,11 @@ class CameraControls:
         if "telemetry" in incoming:
             values = incoming["telemetry"]
             self._update_camera_rate(values)
-            self.actual_exposure_label.setText(f"当前曝光 {values.get('ExposureTime', 0) / 1000:.3f} ms · 增益 {values.get('Gain', 0):.2f} dB")
+            self.actual_exposure_label.setText(self._camera_readout(values))
             # Continuous/Once controls are read back; never overwrite a pending mode request.
             for name, checkbox in self._mode_checkboxes().items():
+                if name not in incoming.get("modes", {}) and name not in values:
+                    continue
                 mode = incoming.get("modes", {}).get(name, values.get(name, "Off"))
                 if name in self._pending_modes: continue
                 with QSignalBlocker(checkbox): checkbox.setChecked(mode != "Off")
@@ -92,7 +98,7 @@ class CameraControls:
         try:
             for name, box in self.numeric_boxes.items():
                 limits = numeric.get(name)
-                box.setEnabled(limits is not None)
+                box.setEnabled(bool(limits) and limits.get("writable", True))
                 if limits:
                     factor = 1000 if name in ("ExposureTime", "AutoExposureExposureTimeUpperLimit") else 1
                     with QSignalBlocker(box):
@@ -102,14 +108,15 @@ class CameraControls:
                         if not (box.hasFocus() or box.lineEdit().hasFocus()):
                             box.setValue(values.get(name, limits.get("value", box.value() * factor)) / factor)
             for name, checkbox in self._mode_checkboxes().items():
-                checkbox.setEnabled("Continuous" in enums.get(name, []))
+                checkbox.setEnabled("Continuous" in enums.get(name, []) and incoming.get("enum_writable", {}).get(name, True))
                 with QSignalBlocker(checkbox): checkbox.setChecked(values.get(name, "Off") != "Off")
-            self.once_exposure_button.setEnabled("Once" in enums.get("ExposureAuto", []))
-            self.once_wb_button.setEnabled("Once" in enums.get("BalanceWhiteAuto", []))
+            self.once_exposure_button.setEnabled("Once" in enums.get("ExposureAuto", []) and incoming.get("enum_writable", {}).get("ExposureAuto", True))
+            self.once_wb_button.setEnabled("Once" in enums.get("BalanceWhiteAuto", []) and incoming.get("enum_writable", {}).get("BalanceWhiteAuto", True))
             combo = self.enum_boxes["PixelFormat"]
             self.frame_rate_check.setEnabled(incoming.get("booleans", {}).get("AcquisitionFrameRateEnable", False))
             with QSignalBlocker(self.frame_rate_check):
-                self.frame_rate_check.setChecked(bool(values.get("AcquisitionFrameRateEnable", False)))
+                self.frame_rate_check.setChecked(bool(values.get("AcquisitionFrameRateEnable", "AcquisitionFrameRate" in numeric)))
+            combo.setEnabled(bool(enums.get("PixelFormat")) and incoming.get("enum_writable", {}).get("PixelFormat", True))
             with QSignalBlocker(combo):
                 combo.clear()
                 combo.addItems(enums.get("PixelFormat", []))
@@ -117,21 +124,35 @@ class CameraControls:
             size = incoming.get("sensor_size", [values.get("Width", 1200), values.get("Height", 900)])
             for name, box in self.roi_boxes.items():
                 limits = incoming.get("integers", {}).get(name)
-                box.setEnabled(limits is not None)
+                box.setEnabled(bool(limits) and limits.get("writable", True))
                 if limits:
                     maximum = size[0] if name in ("Width", "OffsetX") else size[1]
                     with QSignalBlocker(box):
-                        box.setRange(limits["min"], maximum if name in ("Width", "Height") else maximum - 16)
+                        extent = "Width" if name == "OffsetX" else "Height"
+                        minimum_extent = incoming.get("integers", {}).get(extent, {}).get("min", 1)
+                        upper = maximum if name in ("Width", "Height") else max(limits["min"], maximum - minimum_extent)
+                        box.setRange(limits["min"], upper)
                         box.setSingleStep(max(1, limits.get("inc", 1)))
                         box.setValue(values.get(name, limits["min"]))
+            roi_writable = all(incoming.get("integers", {}).get(name, {}).get("writable", False)
+                               for name in ("Width", "Height"))
+            self.resolution_combo.setEnabled(roi_writable)
+            self.apply_roi_button.setEnabled(roi_writable)
+            self.full_roi_button.setEnabled(roi_writable)
             self.camera_info.setText(f"采集 {values.get('Width', '—')} × {values.get('Height', '—')} · {values.get('PixelFormat', '—')}")
-            self.actual_exposure_label.setText(f"当前曝光 {values.get('ExposureTime', 0) / 1000:.3f} ms · 增益 {values.get('Gain', 0):.2f} dB")
+            self.actual_exposure_label.setText(self._camera_readout(values))
             self._sync_exposure_slider()
             self._sync_gain_slider()
             self._update_auto_controls()
         finally:
             self._updating_camera = False
         self._profiles_received(incoming)
+
+    @staticmethod
+    def _camera_readout(values):
+        exposure = f"{values['ExposureTime'] / 1000:.3f} ms" if "ExposureTime" in values else "—"
+        gain = f"{values['Gain']:.2f} dB" if "Gain" in values else "—"
+        return f"当前曝光 {exposure} · 增益 {gain}"
 
     def _mode_checkboxes(self):
         return {"ExposureAuto": self.auto_exposure_check, "GainAuto": self.auto_gain_check,
@@ -144,16 +165,17 @@ class CameraControls:
             bool(rate) and rate.get("writable", True) and self.frame_rate_check.isChecked())
         automatic = self.auto_exposure_check.isChecked()
         automatic_gain = self.auto_gain_check.isChecked()
-        self.numeric_boxes["ExposureTime"].setEnabled("ExposureTime" in numeric and not automatic)
-        self.exposure_slider.setEnabled("ExposureTime" in numeric and not automatic)
-        self.numeric_boxes["Gain"].setEnabled("Gain" in numeric and not automatic_gain)
-        self.gain_slider.setEnabled("Gain" in numeric and not automatic_gain)
+        self.numeric_boxes["ExposureTime"].setEnabled("ExposureTime" in numeric and numeric["ExposureTime"].get("writable", True) and not automatic)
+        self.exposure_slider.setEnabled("ExposureTime" in numeric and numeric["ExposureTime"].get("writable", True) and not automatic)
+        self.numeric_boxes["Gain"].setEnabled("Gain" in numeric and numeric["Gain"].get("writable", True) and not automatic_gain)
+        self.gain_slider.setEnabled("Gain" in numeric and numeric["Gain"].get("writable", True) and not automatic_gain)
         for name in ("AutoExposureTargetGreyValue", "AutoExposureExposureTimeUpperLimit", "AutoExposureGainUpperLimit"):
-            supported = name in numeric
+            supported = name in numeric and numeric[name].get("writable", True)
             self.numeric_boxes[name].setEnabled(supported)
-            self.numeric_boxes[name].setToolTip("设置在开启自动控制后生效" if supported else "当前相机未提供此参数")
+            self.numeric_boxes[name].setToolTip("设置在开启自动控制后生效" if supported else
+                                               "当前相机此参数不可写" if name in numeric else "当前相机未提供此参数")
         for name in ("BalanceRatioRed", "BalanceRatioBlue"):
-            self.numeric_boxes[name].setEnabled(name in numeric and not self.auto_wb_check.isChecked())
+            self.numeric_boxes[name].setEnabled(name in numeric and numeric[name].get("writable", True) and not self.auto_wb_check.isChecked())
 
     def _camera_command(self, settings):
         if self.capture is not None and not self._updating_camera:

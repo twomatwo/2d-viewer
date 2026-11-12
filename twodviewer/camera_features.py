@@ -249,7 +249,7 @@ def apply_features(spin, nodemap, payload: dict) -> list[str]:
         pending = retry
     else:
         retry = pending
-    errors = [failures[row["name"]] for row in retry]
+    errors = []
     for row in supported:
         if row["name"] in deferred:
             try:
@@ -258,6 +258,16 @@ def apply_features(spin, nodemap, payload: dict) -> list[str]:
                 write_value(spin, nodemap.GetNode(row["name"]), row["value"])
             except Exception as exc:
                 errors.append(str(exc))
+    # Some FLIR auto-algorithm controls (e.g. damping/lighting/metering)
+    # are only accessible with the final automatic mode enabled. Retry them
+    # after restoring target modes instead of rejecting an otherwise valid profile.
+    for row in retry:
+        try:
+            for selector, value in row.get("selectors", []):
+                write_value(spin, nodemap.GetNode(selector), value)
+            write_value(spin, nodemap.GetNode(row["name"]), row["value"])
+        except Exception as exc:
+            errors.append(str(exc))
     for row in selector_rows:
         try:
             for selector, value in row.get("selectors", []):

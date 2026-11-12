@@ -6,9 +6,11 @@
 
 View microscope images, outline regions of interest, record mean RGB values, measure lengths, areas and angles, and export results in one desktop application. Use a supported FLIR camera for acquisition or open existing images for offline work.
 
-**Current release: 0.14.1 · Windows 11 x64 · The application interface is currently in Chinese**
+**Source: 0.15.0 · Published installer: 0.14.1 · Windows 11 x64 · The application interface is currently in Chinese**
 
 **[Download the Windows installer](https://github.com/twomatwo/2d-viewer/releases/download/v0.14.1/2D-Viewer-Setup-0.14.1-x64.exe)** · [All releases](https://github.com/twomatwo/2d-viewer/releases) · [Installation guide (Chinese)](https://github.com/twomatwo/2d-viewer/releases/download/v0.14.1/Installation-Guide-zh-CN.html) · [SHA256 checksums](https://github.com/twomatwo/2d-viewer/releases/download/v0.14.1/SHA256SUMS.txt)
+
+> Source version 0.15.0 introduces a generic FLIR/Spinnaker adapter. The 0.14.1 installer below does not include this refactor; run from source to try the updated acquisition backend.
 
 ## Screenshots
 
@@ -27,7 +29,7 @@ View microscope images, outline regions of interest, record mean RGB values, mea
 
 | Feature | Capabilities |
 | --- | --- |
-| Camera acquisition | Developed for the FLIR Blackfly S BFS-U3-51S5C-C; exposure, gain, white balance and per-objective camera profiles, plus snapshots, video recording and timed capture. |
+| Camera acquisition | Source 0.15.0 discovers/selects Spinnaker devices and enables controls by capability. The BFS-U3-51S5C-C has passed hardware regression. Exposure, gain, white balance, per-objective camera profiles, snapshots, video recording and timed capture are supported. |
 | Offline viewing | Open existing PNG, JPEG, TIFF and other supported images for viewing, processing, annotation and measurement without a camera. |
 | Image processing | Overall and per-channel RGB levels, gamma, channel gains, brightness, contrast, saturation, grayscale, mirroring and rotation, with histogram controls. |
 | Measurements | Length, area and three-point angles; area selection also records mean RGB. Measurements retain their creation-time objective and calibration. |
@@ -48,7 +50,7 @@ View microscope images, outline regions of interest, record mean RGB values, mea
 3. Launch **2D Viewer**. For acquisition, connect the camera to a USB3 port and close SpinView or other software using the camera. For offline work, click **打开图像…** (Open image) to load an existing image.
 4. Select the physical objective in the top toolbar. Before calibrated measurements, configure a real calibration under **设置 → 物镜与标定** (Settings → Objectives and calibration). Measurement and drawing tools are in the **标注** (Annotations) tab.
 
-The installer targets **Windows 11 x64**. Camera acquisition is developed for the **FLIR BFS-U3-51S5C-C**; compatibility with other camera models has not been established. The release has passed packaged functionality checks and an actual EXE offline-startup check. First-time driver installation on a clean PC has not yet been validated.
+The installer targets **Windows 11 x64**. Source 0.15.0 removes the model-specific selection rule: a sole Spinnaker device is selected automatically; multiple devices require explicit selection. Supported capabilities and pixel formats depend on the device. The **FLIR BFS-U3-51S5C-C** has been tested on hardware; other models have not yet been tested and are not certified by this project. See the [camera adapter and compatibility notes](docs/camera-backends.md). The release has passed packaged functionality checks and an actual EXE offline-startup check. First-time driver installation on a clean PC has not yet been validated.
 
 ## Understanding the measurements
 

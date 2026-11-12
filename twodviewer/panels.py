@@ -76,7 +76,7 @@ def camera_panel(w):
     layout.addWidget(note("相机参数 · 直接改变采集，也会影响原始 TIFF。"))
     device = Section("设备连接")
     w.source_combo = QComboBox()
-    w.source_combo.addItem("自动选择 BFS-U3-51S5C", "")
+    w.source_combo.addItem("自动选择（仅一台相机时）", "")
     w.source_combo.setToolTip("选择要连接的相机；设备设置中指定序列号时优先使用该序列号。")
     w.scan_button = QPushButton("扫描相机")
     w.scan_button.clicked.connect(w._scan_cameras)
@@ -92,7 +92,7 @@ def camera_panel(w):
     w.disconnect_button = QPushButton("停止预览")
     w.disconnect_button.clicked.connect(w._disconnect_camera)
     w.disconnect_button.setEnabled(False)
-    w.device_label = note("BFS-U3-51S5C-C · USB3")
+    w.device_label = note("Spinnaker 相机 · USB3／GigE")
     device.form.addRow(w.source_combo)
     device.form.addRow(w.scan_button)
     device.form.addRow(button_row(w.connect_button, w.disconnect_button))
@@ -182,6 +182,7 @@ def camera_panel(w):
     for name, label in (("OffsetX", "起点 X"), ("OffsetY", "起点 Y"), ("Width", "宽 / px"), ("Height", "高 / px")):
         w.roi_group.form.addRow(label, w.roi_boxes[name])
     apply_roi, full_roi = QPushButton("应用区域"), QPushButton("恢复全幅")
+    w.apply_roi_button, w.full_roi_button = apply_roi, full_roi
     apply_roi.clicked.connect(w._apply_roi)
     full_roi.clicked.connect(lambda: w._camera_command({"SensorROI": None}))
     w.roi_group.form.addRow(button_row(apply_roi, full_roi))

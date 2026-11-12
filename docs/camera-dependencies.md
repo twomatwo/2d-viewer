@@ -5,3 +5,5 @@
 3. 不要用 PyPI 上同名 PySpin 包代替官方绑定。SDK、wheel、Python 版本和架构必须匹配。明确指定的 wheel 路径无效时会报错，不替换为其他文件。
 
 SDK 许可证保存在 [licenses/Spinnaker](licenses/Spinnaker/)，官方二进制文件不上传 GitHub。只有构建离线安装包时，才需要额外提供完整 SDK 安装 EXE，详见 [打包说明](../packaging/README.md)。
+
+源码 0.15.0 使用通用 Spinnaker 后端，不按 BFS 型号筛选。其他 SDK 可见 FLIR 设备的具体能力与像素格式仍需实机验证；详见 [相机适配说明](camera-backends.md)。当前安装包仍为 0.14.1。

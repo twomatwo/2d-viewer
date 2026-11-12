@@ -1,6 +1,6 @@
 # 2D Viewer 开发维护说明
 
-Windows 11 桌面显微相机软件，FLIR BFS-U3-51S5C-C（USB3）。原名 LabView，当前产品名 2D Viewer。只维护主程序；未连接相机时使用主程序“打开图像…”进行离线查看、处理、标注和测量。当前源码和交付安装包均为 0.14.1；后续修改源码不自动重建安装包。
+Windows 11 桌面显微相机软件，FLIR BFS-U3-51S5C-C（USB3）。原名 LabView，当前产品名 2D Viewer。只维护主程序；未连接相机时使用主程序“打开图像…”进行离线查看、处理、标注和测量。当前源码为 0.15.0，交付安装包为 0.14.1；后续修改源码不自动重建安装包。
 
 ## 用户明确约束
 
@@ -33,7 +33,7 @@ Windows 11 桌面显微相机软件，FLIR BFS-U3-51S5C-C（USB3）。原名 Lab
 ## 核心实现与兼容约束
 
 - 采集线程独占 SDK，原始数组在 image.Release 前复制；LatestBuffer 仅保留最新帧。处理事件唤醒，GUI 通知合并；实际绘制 FPS 以新帧完成 Qt 绘制计数。Frame 保留不可变配置、物镜／方案版本及代次，不能混入旧处理结果。内部帧身份不显示在界面。
-- 相机方案位于 profile_controls.py／profile_dialogs.py，SDK 访问在 camera_features.py 和 acquisition.py，纯数据比较在 camera_profiles.py。不能依赖本机不完整的 IsStreamable 标记；按官方成像分类与选择器收集可读标量，排除命令、文件及运行时计数。访问选择器后必须恢复；自动模式恢复后仍需恢复选择器。不能无条件重置 ROI、启用帧率限制或用当前 IsAvailable 代替静态分类。未启用触发的派生值只记录，不强写。
+- 相机方案位于 profile_controls.py／profile_dialogs.py，SDK 访问在 camera_features.py 和 camera_backends/spinnaker.py，Qt 线程入口在 acquisition.py，纯数据比较在 camera_profiles.py。不能依赖本机不完整的 IsStreamable 标记；按官方成像分类与选择器收集可读标量，排除命令、文件及运行时计数。访问选择器后必须恢复；自动模式恢复后仍需恢复选择器。不能无条件重置 ROI、启用帧率限制或用当前 IsAvailable 代替静态分类。未启用触发的派生值只记录，不强写。
 - 配置恢复必须回读核对，失败尝试恢复并报告，不能显示已应用。自动输出数值不参与修改判定，模式开关参与；手动方案恢复必须同时关闭自动模式及恢复数值。同相机完整配置值（含全部选择器）严格相同时才允许不重启采集的上下文切换；临时方案避免重复写盘。
 - settings_store.py 保留旧 settings.v1 schema，objective_entries 用稳定 ID，旧名称只作镜像；不能强加默认物镜。旧配置首次写入前保留 before-objective-profiles 备份；更改用 transaction 失败回滚。标定库 v2 保存全部采样上下文并兼容 v1，导入相机库不能带入电脑处理或标定。
 - 标定按相机与 binning／decimation、Sensor／ISP 选择器层完整 sampling_features 匹配；全为 1 时兼容旧标定，ROI 裁切可沿用。换光路需要真实标定。冻结／离线图像使用自身物镜及拍摄标定，PNG 重开不能再 Bayer 解码。逐帧参数以 chunk 为准，其他为最近回读。
@@ -58,3 +58,12 @@ Windows 11 桌面显微相机软件，FLIR BFS-U3-51S5C-C（USB3）。原名 Lab
 2026-11-12 发布 0.14.1：PyInstaller 6.22.3／Inno Setup 6.7.3 生成 x64 离线安装包，附完整 FLIR 签名有效的 Spinnaker 4.4.0.246 官方安装文件。构建发现宿主 PATH 中 Poppler 的 icuuc.dll（版本化导出）被误收集，与 Qt 6.12 所需的 Windows 系统 ICU（非版本化导出）冲突，导致 QtCore 无法加载；spec 排除同名 ICU 与相应 icudt 数据 DLL，使用目标 Windows 11 系统 ICU，不能重新带入宿主 Poppler 依赖。
 
 40 项打包隔离验证通过：从实际 EXE 的 PYZ 中加载应用代码、从打包目录加载 Qt／NumPy／OpenCV／PySpin／tifffile，验证图片标注、角度、面积 RGB、变换与撤销、组合透明 PNG、CSV、原始 TIFF 像素、PNG 元数据、1050／1480 布局和实际 Qt 绘制；另已确认实际成品 EXE --no-connect 离线启动及临时数据日志正常。安装包经 Inno 成功编译，校验见 release/SHA256SUMS.txt。未连接相机，未在本机覆盖安装或运行驱动安装器，未执行干净新电脑首次安装验收。发布附件为安装 EXE、HTML 说明与 SHA256SUMS.txt。
+
+
+## FLIR 通用化（源码 0.15.0）
+
+相机 SDK 生命周期已移入 Qt-free 的 camera_backends/spinnaker.py；acquisition.py 保留原 QThread 命令／信号接口，discovery.py 共用后端发现入口。单设备自动、多设备明确选择，序列号错误不回退，界面显示实际型号。格式保留／协商、缺失／只读参数、黑白设备、无独立帧率开关等按能力处理；不存在的自动模式不能补入方案。旧 schema、相机身份及标定数据保持兼容。
+
+实际 BFS 回归暴露自动模式依赖：某些算法控制只有在最终自动模式开启后才可写。camera_features.apply_features 需在恢复目标模式后重试这些失败行，再恢复选择器和回读，不能误报合法方案失败并回滚到临时 Once 状态。固定此行为并加入单测。
+
+完成 19 项无需硬件的重复测试、19 项当前 BFS 实机采集／控制回归、10 项实际 GUI 检查；原方案最终恢复并回读一致，图像尺寸／格式／帧所有权和 2,152 条完整功能记录与改造前相符。没有写真实用户配置、没有生成应用模拟设备。其他型号／GigE 未实测；不能宣称全部 FLIR 已认证。接口、格式及验证详情见 [相机适配说明](camera-backends.md)。本次仅更新源码与文档，安装包未重建。

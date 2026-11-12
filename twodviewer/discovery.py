@@ -1,30 +1,19 @@
-from __future__ import annotations
-
+"""Device discovery through the same backend used by the capture worker."""
 from PySide6.QtCore import QThread, Signal
 
-from .acquisition import load_spinnaker
+from .camera_backends import discover_devices
 
 
 class DiscoveryWorker(QThread):
     found = Signal(list)
     error = Signal(str)
 
+    def __init__(self, *, backend="spinnaker"):
+        super().__init__()
+        self.backend = backend
+
     def run(self):
-        system, cameras, camera = None, None, None
         try:
-            spin = load_spinnaker()
-            system = spin.System.GetInstance()
-            cameras = system.GetCameras()
-            devices = []
-            for index in range(cameras.GetSize()):
-                camera = cameras.GetByIndex(index)
-                devices.append({"model": camera.TLDevice.DeviceModelName.GetValue(),
-                                "serial": camera.TLDevice.DeviceSerialNumber.GetValue()})
-                camera = None
-            self.found.emit(devices)
+            self.found.emit(discover_devices(self.backend))
         except Exception as exc:
             self.error.emit(f"扫描相机失败：{exc}")
-        finally:
-            camera = None
-            if cameras is not None: cameras.Clear()
-            if system is not None: system.ReleaseInstance()

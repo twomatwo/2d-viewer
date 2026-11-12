@@ -100,7 +100,7 @@ def spinbox(minimum: float, maximum: float, value: float, decimals: int = 2) -> 
 class MainWindow(AnnotationRecovery, CameraControls, CameraProfileControls, ProfileControls, CaptureControls, QMainWindow):
     def __init__(self, settings_path: Path | None = None, data_directory: Path | None = None) -> None:
         super().__init__()
-        self.setWindowTitle(f"{APP_NAME} {__version__} · BFS-U3-51S5C")
+        self.setWindowTitle(f"{APP_NAME} {__version__}")
         self.resize(1480, 940)
         self.setMinimumSize(1050, 700)
         self.setStyleSheet(STYLE)
