@@ -22,6 +22,7 @@ class CameraProfileControls:
     def _init_profile_state(self):
         objective = self.store.objective(self.store.data["selected_objective"])
         self._profile_key = (objective["id"], self.store.objective_library(objective["id"])["active"])
+        self._pending_profile_key = None
         self._profile_actual = {}
         self._profile_requests = {}
         self._profile_verified = False
@@ -49,7 +50,7 @@ class CameraProfileControls:
         restore = QToolButton()
         restore.setDefaultAction(self.restore_profile_action)
         form.addRow(button_row(save, restore))
-        self.profile_menu = QMenu(self)
+        self.profile_menu = self.camera_settings_menu
         self.profile_menu.addAction("另存为相机方案…", lambda: self._save_preset(as_new=True))
         self.profile_menu.addAction("核对全部相机参数…", self._inspect_camera_profile)
         self.recover_profile_action = self.profile_menu.addAction("恢复上次临时调整", self._recover_profile_draft)
@@ -59,20 +60,13 @@ class CameraProfileControls:
         self.profile_menu.addAction("导出当前物镜全部方案…", lambda: self._export_preset("objective"))
         self.profile_menu.addAction("导出全部物镜与相机方案…", lambda: self._export_preset("all"))
         self.profile_menu.addAction("载入相机参数文件…", self._import_preset)
-        self.profile_menu.addSeparator()
-        self.profile_menu.addAction("管理物镜…", self._manage_objectives)
-        more = QToolButton()
-        more.setText("方案管理")
-        more.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-        more.setMenu(self.profile_menu)
         self.objective_status_button = QPushButton()
-        self.objective_status_button.setToolTip("到测量页勾选当前物镜，或用标尺校准该物镜")
-        self.objective_status_button.clicked.connect(lambda: self.tabs.setCurrentIndex(2))
-        form.addRow(button_row(more, self.objective_status_button))
+        self.objective_status_button.setToolTip("打开物镜与标定设置，选择或校准当前物镜")
+        self.objective_status_button.clicked.connect(self._show_calibration_settings)
+        form.addRow(self.objective_status_button)
         self.profile_status = QLabel()
         self.profile_status.setWordWrap(True)
         form.addRow(self.profile_status)
-        self.settings_menu.addAction("物镜与相机参数…", self._manage_objectives)
         self._refresh_profile_ui()
 
     def _key_string(self, key=None):
@@ -95,23 +89,17 @@ class CameraProfileControls:
     def _refresh_profile_ui(self):
         if not hasattr(self, "profile_combo"):
             return
-        objective = self.store.objective(self._profile_key[0])
+        key = self._pending_profile_key or self._profile_key
+        objective = self.store.objective(key[0])
         if objective is None:
             objective = self.store.objective(self.store.data["selected_objective"])
         self.camera_profiles_section.header.setText(f"物镜相机参数 · {objective['name']}")
         objective_options = [(item["name"], item["id"]) for item in self.store.data["objective_entries"]
                              if item.get("enabled", True)]
-        with QSignalBlocker(self.objective_combo):
-            existing = [(self.objective_combo.itemText(i), self.objective_combo.itemData(i))
-                        for i in range(self.objective_combo.count())]
-            if existing != objective_options:
-                self.objective_combo.clear()
-                for name, identity in objective_options:
-                    self.objective_combo.addItem(name, identity)
-            self.objective_combo.setCurrentIndex(self.objective_combo.findData(objective["id"]))
+        self.objective_selector.configure(objective_options, objective["id"])
         library = self.store.objective_library(objective["id"])
         profile_options = []
-        if not library["schemes"] or not self._profile_key[1]:
+        if not library["schemes"] or not key[1]:
             profile_options.append(("尚未保存方案" if not library["schemes"] else "未选择已保存方案", ""))
         profile_options.extend((name, name) for name in library["schemes"])
         with QSignalBlocker(self.profile_combo):
@@ -121,11 +109,13 @@ class CameraProfileControls:
                 self.profile_combo.clear()
                 for label, name in profile_options:
                     self.profile_combo.addItem(label, name)
-            self.profile_combo.setCurrentIndex(max(0, self.profile_combo.findData(self._profile_key[1])))
-        saved = self._saved_profile()
+            self.profile_combo.setCurrentIndex(max(0, self.profile_combo.findData(key[1])))
+        saved = self._saved_profile(key)
         changed = differences(saved, self._profile_actual) if saved and self._profile_actual else []
         busy, online = bool(self._profile_requests), self.capture is not None and bool(self._profile_actual)
-        if self._profile_failure:
+        if self._pending_profile_key is not None:
+            status = f"正在切换至 {objective['name']}…"
+        elif self._profile_failure:
             status = "应用失败 · 请核对"
         elif busy:
             status = "正在回读…" if self._profile_busy() else "正在应用…"
@@ -144,13 +134,13 @@ class CameraProfileControls:
         self.profile_status.setToolTip("不同参数：" + ", ".join(changed[:30]) if changed else status)
         self.save_profile_action.setEnabled(online and not busy)
         self.restore_profile_action.setEnabled(bool(saved) and not busy)
-        self.objective_combo.setEnabled(not self._profile_busy())
+        self.objective_selector.setEnabled(not self._profile_busy())
         self.profile_combo.setEnabled(not self._profile_busy() and bool(library["schemes"]))
-        draft = self.store.data["profile_drafts"].get(self._key_string())
+        draft = self.store.data["profile_drafts"].get(self._key_string(key))
         self.recover_profile_action.setEnabled(bool(draft) and not busy)
 
-    def _objective_combo_changed(self, index):
-        item = self.store.objective(self.objective_combo.itemData(index))
+    def _objective_button_clicked(self, identity):
+        item = self.store.objective(identity)
         if item:
             self._objective_changed(item["name"])
 
@@ -216,10 +206,14 @@ class CameraProfileControls:
         saved, key = self._saved_profile(), self._key_string()
         dirty = not saved or bool(differences(saved, self._profile_actual))
         if dirty:
-            self._session_drafts[key] = deepcopy(self._profile_actual)
+            if self._session_drafts.get(key) != self._profile_actual:
+                self._session_drafts[key] = deepcopy(self._profile_actual)
         else:
             self._session_drafts.pop(key, None)
 
+        drafts = self.store.data["profile_drafts"]
+        if (dirty and drafts.get(key) == self._profile_actual) or (not dirty and key not in drafts):
+            return
         def update():
             if dirty:
                 self.store.data["profile_drafts"][key] = deepcopy(self._profile_actual)
@@ -249,7 +243,7 @@ class CameraProfileControls:
                                 for name in geometry if name in payload["settings"])
         def apply():
             self._apply_profile_selection(key, payload, saved, new_view=changed_view)
-        if changed_view:
+        if changed_view and key[0] == self._profile_key[0]:
             self._confirm_new_view(apply)
         else:
             apply()
@@ -271,16 +265,29 @@ class CameraProfileControls:
             if answer != QMessageBox.StandardButton.Yes:
                 self._refresh_profile_ui()
                 return
+        self._pending_profile_key = key
         if new_view:
-            self._new_source()
+            preserve = key[0] != self._profile_key[0]
+            self._new_source(preserve_annotations=preserve)
+            if preserve and self.viewer.annotations:
+                self.statusBar().showMessage("已保留原标注，请核对位置；原测量保留创建时的倍率和标定。", 7000)
         token = uuid4().hex
         self._profile_requests[token] = {"kind": "select", "key": key, "baseline": saved}
+        self.viewer.measurement_enabled = False
         self._profile_failure = ""
         context = self._context_for_profile(key, saved)
-        if payload:
-            self.capture.configure_profile(payload, context, token, baseline=saved)
-        else:
-            self.capture.configure_context(context, None, token)
+        try:
+            if payload:
+                self.capture.configure_profile(payload, context, token, baseline=saved)
+            else:
+                self.capture.configure_context(context, None, token)
+        except (ValueError, RuntimeError) as exc:
+            self._profile_requests.pop(token, None)
+            self._pending_profile_key = None
+            self._profile_verified = False
+            self._profile_failure = str(exc)
+            self._error(f"物镜切换请求失败：{exc}")
+            self._apply_selected_calibration()
         self._refresh_profile_ui()
 
     def _commit_profile_selection(self, key):
@@ -288,8 +295,11 @@ class CameraProfileControls:
         def update():
             self.store.data["selected_objective"] = objective["name"]
             self.store.objective_library(key[0])["active"] = key[1]
-        self.store.transaction(update)
+        if (self.store.data["selected_objective"] != objective["name"] or
+                self.store.objective_library(key[0])["active"] != key[1]):
+            self.store.transaction(update)
         self._profile_key = key
+        self._pending_profile_key = None
         self._refresh_objectives()
         self._refresh_profile_ui()
         self._apply_selected_calibration()
@@ -317,6 +327,8 @@ class CameraProfileControls:
             self._refresh_profile_ui()
             return
         if not result["ok"]:
+            if info["kind"] == "select":
+                self._pending_profile_key = None
             self._profile_failure = result["error"]
             self._profile_verified = False
             self._refresh_profile_ui()
@@ -352,6 +364,8 @@ class CameraProfileControls:
                 self._profile_verified = True
                 self._stash_profile_draft()
         except (OSError, ValueError) as exc:
+            if info["kind"] == "select":
+                self._pending_profile_key = None
             self._error(f"相机方案保存或选择失败：{exc}")
         self._refresh_profile_ui()
 
@@ -507,6 +521,7 @@ class CameraProfileControls:
 
     def _apply_selected_calibration(self):
         name = self._display_objective()
+        self._sync_annotation_context()
         context = sampling_context(self.current.frame) if self.current is not None else None
         calibration = self.store.calibration(name, context)
         if self.current is not None and self.current.frame.capture_calibration:
@@ -534,9 +549,13 @@ class CameraProfileControls:
     def _refresh_objectives(self):
         context = sampling_context(self.current.frame) if self.current is not None else None
         with QSignalBlocker(self.objective_list):
-            self.objective_list.clear()
-            self.objective_list._selected = ""
-            self.objective_list.addItems(self.store.objective_names())
+            names = self.store.objective_names()
+            existing = [self.objective_list.topLevelItem(i).text(0)
+                        for i in range(self.objective_list.topLevelItemCount())]
+            if existing != names:
+                self.objective_list.clear()
+                self.objective_list._selected = ""
+                self.objective_list.addItems(names)
             for index in range(self.objective_list.topLevelItemCount()):
                 row = self.objective_list.topLevelItem(index)
                 entry = self.store.calibration_record(row.text(0), context) or self.store.calibration_record(row.text(0))
@@ -545,8 +564,10 @@ class CameraProfileControls:
                             "已标定" if entry["context"] == context else "不匹配")
                 row.setForeground(2, QColor("#9be2cf" if row.text(2) == "已标定" else "#ffd166"))
                 row.setToolTip(1, row.text(1))
-            self.objective_list.setCurrentText(self.store.data["selected_objective"])
+            selected = self.store.objective((self._pending_profile_key or self._profile_key)[0])
+            self.objective_list.setCurrentText(selected["name"] if selected else self.store.data["selected_objective"])
         if hasattr(self, "objective_status_button"):
             scale = self.viewer.calibration
-            self.objective_status_button.setText("标定：已匹配" if scale.units_per_pixel else "标定：未匹配")
+            self.objective_status_button.setText("标定：切换中" if self._pending_profile_key is not None else
+                                                 "标定：已匹配" if scale.units_per_pixel else "标定：未匹配")
             self.objective_status_button.setToolTip(self.calibration_label.text())

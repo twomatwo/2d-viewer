@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QSize, Qt
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFormLayout, QFrame,
-    QHBoxLayout, QLabel, QLineEdit, QListWidget, QPushButton, QSlider, QSpinBox,
-    QSizePolicy, QToolButton, QVBoxLayout, QWidget)
+    QGridLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QPushButton, QSlider, QSpinBox,
+    QSizePolicy, QToolButton, QVBoxLayout, QWidget, QTreeWidget, QAbstractItemView)
 
+from .annotation_icons import annotation_icon
 from .histogram import HistogramWidget
 from .controls import ObjectiveList
 from .dialogs import TaskDialog
@@ -76,10 +77,15 @@ def camera_panel(w):
     device = Section("设备连接")
     w.source_combo = QComboBox()
     w.source_combo.addItem("自动选择 BFS-U3-51S5C", "")
+    w.source_combo.setToolTip("选择要连接的相机；设备设置中指定序列号时优先使用该序列号。")
     w.scan_button = QPushButton("扫描相机")
     w.scan_button.clicked.connect(w._scan_cameras)
     w.serial_edit = QLineEdit()
-    w.serial_edit.setPlaceholderText("可手动指定序列号")
+    w.serial_edit.setPlaceholderText("留空时使用右侧选择的相机")
+    w.serial_edit.setText(w.store.data["preferences"].get("manual_camera_serial", ""))
+    w.device_settings_dialog = TaskDialog(w, "设备设置", "固定使用某台相机时填写序列号；留空则使用相机参数页的选择。")
+    w.device_settings_dialog.form.addRow("手动指定序列号", w.serial_edit)
+    w.serial_edit.editingFinished.connect(w._remember_camera_serial)
     w.connect_button = QPushButton("连接 / 开始预览")
     w.connect_button.setObjectName("primary")
     w.connect_button.clicked.connect(w._connect_camera)
@@ -88,7 +94,7 @@ def camera_panel(w):
     w.disconnect_button.setEnabled(False)
     w.device_label = note("BFS-U3-51S5C-C · USB3")
     device.form.addRow(w.source_combo)
-    device.form.addRow(button_row(w.serial_edit, w.scan_button))
+    device.form.addRow(w.scan_button)
     device.form.addRow(button_row(w.connect_button, w.disconnect_button))
     device.form.addRow(w.device_label)
     layout.addWidget(device)
@@ -194,7 +200,7 @@ def camera_panel(w):
 def capture_panel(w):
     panel = QWidget()
     layout = QVBoxLayout(panel)
-    layout.addWidget(note("“拍照”填写文件名并选择位置；“快速保存”按下方目录和命名规则直接保存。"))
+    layout.addWidget(note("“拍照”填写文件名并选择位置；“快速保存”按下方目录、样品文字和设置中的命名规则保存。"))
     options = Section("图像保存选项")
     w.snapshot_format_box = QComboBox()
     w.snapshot_format_box.addItem("PNG · 当前显示图像", "png")
@@ -215,22 +221,30 @@ def capture_panel(w):
     folder.clicked.connect(w._choose_capture_directory)
     shooting.form.addRow(w.capture_directory_label)
     shooting.form.addRow(folder)
+    w.capture_sample_text = QLineEdit(w.snapshot_naming["sample_text"])
+    w.capture_sample_text.setMaxLength(100)
+    w.capture_sample_text.setPlaceholderText("可留空；添加在文件名前")
+    shooting.form.addRow("样品文字", w.capture_sample_text)
+    w.naming_settings_dialog = TaskDialog(w, "保存与命名设置", "命名模板和编号规则自动保存。样品文字、下一序号和保存目录在右侧拍摄保存页调整。")
+    rules = w.naming_settings_dialog.form
     w.capture_name_template = QLineEdit(w.snapshot_naming["template"])
     w.capture_name_template.setMaxLength(180)
     w.capture_name_template.setToolTip("可输入样品名称，自由排列日期、时间、序号和物镜字段；扩展名由文件格式决定")
-    shooting.form.addRow("命名模板", w.capture_name_template)
+    rules.addRow("命名模板", w.capture_name_template)
     fields = []
     for label, token in (("日期", "date"), ("时间", "time"), ("序号", "seq"), ("物镜", "objective")):
         button = QPushButton(label)
         button.setToolTip("在光标处插入 {" + token + "}")
         button.clicked.connect(lambda checked=False, field=token: w._insert_capture_name_field(field))
         fields.append(button)
-    shooting.form.addRow(button_row(*fields))
-    shooting.form.addRow(note("可插入字段并自由排列，例如 {date}_样品A_{seq}_{objective}。"))
+    rules.addRow(button_row(*fields))
+    rules.addRow(note("可插入字段并自由排列，例如 {date}_{seq}_{objective}；样品文字非空时自动作为前缀。"))
     w.capture_name_preview = note("")
     w.capture_name_preview.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
     shooting.form.addRow(w.capture_name_preview)
-    naming = Section("日期与序号设置", False)
+    w.capture_template_hint = note("命名模板可在左上角“设置 → 保存与命名 → 命名规则…”中修改。")
+    shooting.form.addRow(w.capture_template_hint)
+    naming = Section("日期与序号设置")
     w.capture_date_format = QComboBox()
     for label, pattern in zip(("20261027", "2026-10-27", "2026_10_27"), DATE_FORMATS):
         w.capture_date_format.addItem(label, pattern)
@@ -243,19 +257,22 @@ def capture_panel(w):
     w.capture_sequence_start = integer(1, MAX_SEQUENCE, w.snapshot_naming["sequence_start"])
     w.capture_sequence_start.setEnabled(w.snapshot_naming["reset_daily"])
     naming.form.addRow("日期格式", w.capture_date_format)
-    naming.form.addRow("下一序号", w.capture_next_sequence)
+    shooting.form.addRow("下一序号", w.capture_next_sequence)
     naming.form.addRow("序号位数", w.capture_sequence_digits)
     naming.form.addRow("递增步长", w.capture_sequence_step)
     naming.form.addRow(w.capture_daily_reset)
     naming.form.addRow("每日起始序号", w.capture_sequence_start)
     naming.form.addRow(note("成功保存后递增；有同名文件时跳过已用序号。未使用序号字段时，同名文件追加 _2、_3…，保留已有图像。"))
-    shooting.form.addRow(naming)
+    rules.addRow(naming)
+    w.naming_settings_preview = note("")
+    rules.addRow(w.naming_settings_preview)
     w.quick_capture_help = note("")
     shooting.form.addRow(w.quick_capture_help)
     layout.addWidget(shooting)
     w.snapshot_format_box.currentIndexChanged.connect(w._snapshot_options_changed)
     w.snapshot_annotations_check.toggled.connect(w._snapshot_options_changed)
     w.capture_name_template.textChanged.connect(w._capture_naming_changed)
+    w.capture_sample_text.textChanged.connect(w._capture_naming_changed)
     w.capture_date_format.currentIndexChanged.connect(w._capture_naming_changed)
     w.capture_daily_reset.toggled.connect(w._capture_naming_changed)
     for control in (w.capture_next_sequence, w.capture_sequence_digits, w.capture_sequence_step, w.capture_sequence_start):
@@ -293,11 +310,6 @@ def capture_panel(w):
     layout.addWidget(w.timelapse_entry)
     layout.addWidget(note("按时间间隔 → 多张独立图像。"))
 
-    layout.addWidget(note("每个物镜的相机参数在“相机参数”页保存、恢复或另存。电脑处理独立，不写入相机方案。"))
-    export, import_ = QPushButton("导出当前相机方案…"), QPushButton("载入相机参数文件…")
-    export.clicked.connect(w._export_preset)
-    import_.clicked.connect(w._import_preset)
-    layout.addWidget(button_row(export, import_))
     layout.addStretch()
     return panel
 
@@ -389,10 +401,11 @@ def display_panel(w):
     return panel
 
 
-def measurement_panel(w):
+def calibration_panel(w):
     panel = QWidget()
     layout = QVBoxLayout(panel)
     calibration = Section("物镜与标定比例")
+    w.calibration_section = calibration
     w.objective_list = ObjectiveList()
     w.objective_list.addItems(w.store.objective_names())
     w.objective_list.setCurrentText(w.store.data["selected_objective"])
@@ -426,48 +439,149 @@ def measurement_panel(w):
     import_.clicked.connect(w._import_calibrations)
     edit.form.addRow(button_row(export, import_))
     layout.addWidget(edit)
-    results = Section("长度测量")
-    w.measure_button = QToolButton()
-    w.measure_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
-    color = QPushButton("测量线颜色")
-    color.clicked.connect(lambda: w._choose_color("measure"))
-    results.form.addRow(button_row(w.measure_button, color))
-    results.form.addRow(note("在图像上拖出线段，结果显示在下方。未标定时使用 px。"))
-    w.measurement_list = QListWidget()
-    w.measurement_list.setMinimumHeight(125)
-    w.measurement_list.currentItemChanged.connect(lambda item, previous: w._select_object_item(item))
-    results.form.addRow(w.measurement_list)
-    delete, clear = QPushButton("删除所选测量"), QPushButton("清空测量")
-    delete.clicked.connect(lambda: w._delete_object(True))
-    clear.clicked.connect(lambda: w.viewer.clear_annotations({"measure", "calibrate"}))
-    results.form.addRow(button_row(delete, clear))
-    export_csv = QPushButton("导出测量结果 CSV")
-    export_csv.clicked.connect(w._export_measurements)
-    results.form.addRow(export_csv)
-    layout.addWidget(results)
     layout.addStretch()
     return panel
 
 
 def annotation_panel(w):
     panel = QWidget()
+    panel.setObjectName("annotationPanel")
+    panel.setStyleSheet("""
+        QToolButton { padding: 3px 2px; }
+        QPushButton { padding: 4px 6px; }
+        QDoubleSpinBox { padding: 3px 4px; }
+        QToolButton[annotationTool="true"] {
+            background: #222f42; border: 1px solid #35465f; border-radius: 5px;
+        }
+        QToolButton[annotationTool="true"]:hover { background: #30445b; border-color: #557a94; }
+        QToolButton[annotationTool="true"]:checked {
+            background: #294f53; border-color: #69cbb3; color: #b6f4e1;
+        }
+    """)
     layout = QVBoxLayout(panel)
-    layout.addWidget(note("标记点：在点击位置放一个细小十字，旁边自动标 1、2、3。文字和形状用于说明图像位置。"))
-    w.annotation_tools = QWidget()
-    w.annotation_tools_layout = QVBoxLayout(w.annotation_tools)
-    w.annotation_tools_layout.setContentsMargins(0, 0, 0, 0)
-    layout.addWidget(w.annotation_tools)
-    color, undo = QPushButton("标注颜色"), QPushButton("撤销上一步")
-    color.clicked.connect(lambda: w._choose_color("annotation"))
-    undo.clicked.connect(w.viewer.undo)
-    layout.addWidget(button_row(color, undo))
-    w.annotation_list = QListWidget()
-    w.annotation_list.setMinimumHeight(180)
-    w.annotation_list.currentItemChanged.connect(lambda item, previous: w._select_object_item(item))
-    layout.addWidget(w.annotation_list)
+    layout.setSpacing(2)
+    w.annotation_tool_buttons = {}
+
+    def tool_button(name, icon_size=18):
+        button = QToolButton()
+        button.setProperty("annotationTool", True)
+        button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        button.setIconSize(QSize(icon_size, icon_size))
+        button.setMinimumHeight(28)
+        button.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+        w.annotation_tool_buttons[name] = button
+        return button
+
+    w.select_button = tool_button("select", 16)
+    w.select_button.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
+    w.annotation_undo_button, w.annotation_redo_button = QToolButton(), QToolButton()
+    history = QHBoxLayout()
+    history.setContentsMargins(0, 0, 0, 0)
+    history.setSpacing(4)
+    history.addWidget(w.select_button)
+    history.addStretch()
+    for button in (w.annotation_undo_button, w.annotation_redo_button):
+        button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        button.setIconSize(QSize(16, 16))
+        history.addWidget(button)
+    layout.addLayout(history)
+
+    layout.addWidget(note("测量"))
+    measurement_tools = QGridLayout()
+    measurement_tools.setSpacing(4)
+    for column, name in enumerate(("measure", "angle", "polygon")):
+        measurement_tools.addWidget(tool_button(name), 0, column)
+        measurement_tools.setColumnStretch(column, 1)
+    layout.addLayout(measurement_tools)
+    w.measure_button = w.annotation_tool_buttons["measure"]
+
+    layout.addWidget(note("绘图标注"))
+    drawing_tools = QGridLayout()
+    drawing_tools.setSpacing(4)
+    for index, name in enumerate(("rect", "ellipse", "line", "polygon_shape", "marker", "text", "freehand")):
+        drawing_tools.addWidget(tool_button(name, 16), index // 4, index % 4)
+    w.import_image_button = QToolButton()
+    w.import_image_button.setProperty("annotationTool", True)
+    w.import_image_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+    w.import_image_button.setIconSize(QSize(16, 16))
+    w.import_image_button.setMinimumHeight(28)
+    w.import_image_button.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+    drawing_tools.addWidget(w.import_image_button, 1, 3)
+    for column in range(4):
+        drawing_tools.setColumnStretch(column, 1)
+    layout.addLayout(drawing_tools)
+
+    w.annotation_color_button = QPushButton("标注颜色…")
+    w.annotation_color_button.setToolTip("设置后续绘制颜色；选中标注时也会修改所选对象的颜色，可撤销。图片不受影响。")
+    w.annotation_color_button.clicked.connect(lambda: w._choose_color("annotation"))
+    layout.addWidget(w.annotation_color_button)
+    divider = QFrame()
+    divider.setFrameShape(QFrame.Shape.HLine)
+    divider.setStyleSheet("color: #354156;")
+    layout.addWidget(divider)
+
+    w.annotation_selection_label = QLabel("未选择")
+    w.group_button, w.ungroup_button = QToolButton(), QToolButton()
+    selection = QHBoxLayout()
+    selection.setContentsMargins(0, 0, 0, 0)
+    selection.setSpacing(4)
+    selection.addWidget(w.annotation_selection_label)
+    selection.addStretch()
+    for button in (w.group_button, w.ungroup_button):
+        button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        button.setIconSize(QSize(16, 16))
+        selection.addWidget(button)
+    layout.addLayout(selection)
+    w.image_opacity_row = QWidget()
+    opacity_layout = QHBoxLayout(w.image_opacity_row)
+    opacity_layout.setContentsMargins(0, 0, 0, 0)
+    w.image_opacity_box = number(0, 100, 50, 1)
+    w.image_opacity_box.setSuffix(" %")
+    w.image_opacity_box.setToolTip("按回车或结束编辑应用。多选时同时修改所选图片；数值不同时显示第一张图片的不透明度。")
+    w.image_opacity_box.editingFinished.connect(w._image_opacity_changed)
+    opacity_layout.addWidget(QLabel("图片不透明度"))
+    opacity_layout.addWidget(w.image_opacity_box, 1)
+    layout.addWidget(w.image_opacity_row)
+    w.annotation_transform_row = QWidget()
+    transform_layout = QHBoxLayout(w.annotation_transform_row)
+    transform_layout.setContentsMargins(0, 0, 0, 0)
+    w.annotation_angle_box = number(-180, 180, 0, 3)
+    w.annotation_angle_box.setSuffix(" °")
+    w.annotation_scale_box = number(.01, 1000000, 100, 3)
+    w.annotation_scale_box.setSuffix(" %")
+    for label, box, callback in (("角度", w.annotation_angle_box, w._annotation_angle_changed),
+                                 ("缩放", w.annotation_scale_box, w._annotation_scale_changed)):
+        box.setMinimumWidth(0)
+        box.setToolTip("回车或结束编辑应用；绕所选整体中心变换，可撤销。多选以列表第一项为数值基准，保持相对位置和变换。图片 100% 对应原图像素，正角度为顺时针。")
+        box.editingFinished.connect(callback)
+        transform_layout.addWidget(QLabel(label))
+        transform_layout.addWidget(box, 1)
+    layout.addWidget(w.annotation_transform_row)
+    w.annotation_measurement_label = note("")
+    w.annotation_measurement_label.setToolTip("记录创建时的物镜与标定；移动、缩放和旋转不重新计算原始测量值。")
+    layout.addWidget(w.annotation_measurement_label)
+
+    w.annotation_list = QTreeWidget()
+    w.annotation_list.setHeaderHidden(True)
+    w.annotation_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+    w.annotation_list.setTextElideMode(Qt.TextElideMode.ElideRight)
+    w.annotation_list.setMinimumHeight(140)
+    w.annotation_list.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Ignored)
+    w.annotation_list.setToolTip("Ctrl＋单击多选；在画面拖动对象移动，拖角点等比例缩放，拖上方圆点旋转。缩放后保留原始测量值。")
+    w.annotation_list.itemSelectionChanged.connect(w._annotation_tree_selection_changed)
+    layout.addWidget(w.annotation_list, 1)
     delete, clear = QPushButton("删除所选标注"), QPushButton("清空标注")
-    delete.clicked.connect(lambda: w._delete_object(False))
-    clear.clicked.connect(lambda: w.viewer.clear_annotations({"marker", "text", "line", "rect", "ellipse", "freehand"}))
+    delete.setIcon(annotation_icon("delete"))
+    clear.setIcon(annotation_icon("clear"))
+    delete.clicked.connect(lambda: w.viewer.delete_selected())
+    clear.clicked.connect(lambda: w.viewer.clear_annotations())
     layout.addWidget(button_row(delete, clear))
-    layout.addStretch()
+    w.export_group_button = QPushButton("导出组合 PNG…")
+    w.export_group_button.setIcon(annotation_icon("export"))
+    w.export_group_button.setToolTip("选择一个组合后导出；透明背景，按内容裁切，只包含该组标注，不含相机画面、比例尺或选择框。")
+    w.export_group_button.clicked.connect(w._export_annotation_group)
+    export_csv = QPushButton("导出测量 CSV")
+    export_csv.setIcon(annotation_icon("csv"))
+    export_csv.clicked.connect(w._export_measurements)
+    layout.addWidget(button_row(w.export_group_button, export_csv))
     return panel

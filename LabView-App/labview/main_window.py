@@ -6,12 +6,13 @@ from datetime import datetime
 from pathlib import Path
 from time import monotonic
 import logging
+import math
 
-from PySide6.QtCore import QObject, QSignalBlocker, Qt, QTimer, Signal
-from PySide6.QtGui import QAction, QActionGroup, QColor
+from PySide6.QtCore import QObject, QSignalBlocker, QSaveFile, QIODevice, Qt, QTimer, Signal
+from PySide6.QtGui import QAction, QActionGroup, QColor, QIcon, QPixmap
 from PySide6.QtWidgets import (QCheckBox, QColorDialog, QComboBox, QDoubleSpinBox,
     QFileDialog, QFormLayout, QFrame, QGroupBox, QHBoxLayout, QInputDialog, QLabel,
-    QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QPushButton, QScrollArea,
+    QLineEdit, QListWidget, QListWidgetItem, QTreeWidgetItem, QMainWindow, QMessageBox, QPushButton, QScrollArea,
     QSplitter, QTabWidget, QToolBar, QToolButton, QMenu, QVBoxLayout, QWidget)
 
 from .acquisition import CaptureWorker
@@ -19,23 +20,29 @@ from .exporting import export_metadata, load_image, save_raw, save_png
 from .histogram import HistogramWidget
 from .models import Annotation, Calibration, DisplaySettings, Frame, LatestBuffer, ProcessedFrame
 from .processing import DisplayWorker
-from .panels import camera_panel, display_panel, measurement_panel, annotation_panel, capture_panel, button_row
-from .controls import ClickToEditWheelGuard
+from .panels import camera_panel, display_panel, annotation_panel, capture_panel, calibration_panel, button_row
+from .dialogs import TaskDialog
+from .controls import ClickToEditWheelGuard, ObjectiveSelector
 from .controllers import CameraControls, ProfileControls, CaptureControls
 from .profile_controls import CameraProfileControls
 from .settings_store import SettingsStore, display_from_dict
-from .viewer import ImageViewer, rgb_image, paint_annotations, paint_scale_bar, UNIT_TO_UM
+from .viewer import ImageViewer, rgb_image, paint_annotations, paint_scale_bar, annotation_group_image, UNIT_TO_UM
 from .capture_naming import available_capture_path, naming_settings, validate_filename, write_snapshot
 from .shortcuts import ShortcutManager, ShortcutsDialog
+from .recovery import AnnotationRecovery
+from .image_assets import load_image_asset
+from .image_annotation_dialog import ImageAnnotationDialog
+from .annotation_icons import annotation_icon
 from .app import default_data_directory
 from . import APP_NAME, __version__
 
 
 STYLE = """
 QMainWindow, QWidget { background: #171e2b; color: #e4eaf4; font-family: 'Microsoft YaHei'; font-size: 13px; }
-QToolBar { background: #202a3a; border: none; padding: 8px; spacing: 5px; }
+QToolBar { background: #202a3a; border: none; padding: 6px; spacing: 3px; }
 QToolButton { padding: 7px 10px; border-radius: 5px; }
 QToolButton:hover, QPushButton:hover { background: #344660; }
+QToolButton:disabled { color: #65738b; }
 QToolButton:checked { background: #3a6980; color: #b6f4e1; }
 QPushButton { background: #2b3a51; border: 1px solid #3b4b65; padding: 7px 10px; border-radius: 5px; }
 QPushButton#primary { background: #287968; border-color: #3b9d85; }
@@ -90,7 +97,7 @@ def spinbox(minimum: float, maximum: float, value: float, decimals: int = 2) -> 
     return box
 
 
-class MainWindow(CameraControls, CameraProfileControls, ProfileControls, CaptureControls, QMainWindow):
+class MainWindow(AnnotationRecovery, CameraControls, CameraProfileControls, ProfileControls, CaptureControls, QMainWindow):
     def __init__(self, settings_path: Path | None = None, data_directory: Path | None = None) -> None:
         super().__init__()
         self.setWindowTitle(f"{APP_NAME} {__version__} · BFS-U3-51S5C")
@@ -149,9 +156,13 @@ class MainWindow(CameraControls, CameraProfileControls, ProfileControls, Capture
         self._last_displayed_identity = None
         self._pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="save-image")
         self._camera_description = {}
-        self._measurement_color, self._annotation_color = "#ffd166", "#6eacff"
+        self._annotation_color = "#6eacff"
+        self._pending_recovery = None
+        self._start_recovery_view()
         self.viewer = ImageViewer()
+        self.viewer.document_changed.connect(self._journal_annotations)
         self.viewer.annotations_changed.connect(self._annotations_changed)
+        self.viewer.selection_changed.connect(self._sync_annotation_selection)
         self.viewer.calibration_requested.connect(self._calibrate)
         self.viewer.calibration_cancelled.connect(lambda: self.tool_actions["pan"].trigger())
         self.viewer.annotation_selected.connect(self._show_selected_annotation)
@@ -164,8 +175,14 @@ class MainWindow(CameraControls, CameraProfileControls, ProfileControls, Capture
         except (ValueError, TypeError):
             self.viewer.set_scale_bar_length(100.0)
         self._build_ui()
+        self.calibration_dialog = TaskDialog(self, "物镜标定", "各物镜分别保存标定。设置不会修改已有测量；新测量使用当前画面的匹配标定。")
+        calibration_scroll = self._scroll(calibration_panel(self))
+        calibration_scroll.setMinimumHeight(430)
+        self.calibration_dialog.form.addRow(calibration_scroll)
+        self.calibration_dialog.resize(560, 650)
         self._build_toolbar()
         self._build_profile_ui()
+        self.settings_menu.addAction("恢复自动保存的标注…", self._restore_annotations)
         self.shortcuts = ShortcutManager(self, self.shortcut_actions,
             self.store.data["preferences"].get("shortcuts"))
         self._refresh_shortcut_hints()
@@ -190,6 +207,8 @@ class MainWindow(CameraControls, CameraProfileControls, ProfileControls, Capture
             self._error(self.store.error)
         elif self._capture_settings_warning:
             self._error(self._capture_settings_warning)
+        elif any((self.data_directory / "recovery").glob("*.json")):
+            self.statusBar().showMessage("有自动保存的标注视野，可从“设置 → 恢复自动保存的标注…”打开。", 15000)
 
     def _build_ui(self) -> None:
         root = QWidget()
@@ -242,7 +261,6 @@ class MainWindow(CameraControls, CameraProfileControls, ProfileControls, Capture
         tabs.setMaximumWidth(490)
         tabs.addTab(self._scroll(self._camera_panel()), "相机参数")
         tabs.addTab(self._scroll(self._display_panel()), "电脑处理")
-        tabs.addTab(self._scroll(self._measurement_panel()), "测量")
         tabs.addTab(self._scroll(annotation_panel(self)), "标注")
         tabs.addTab(self._scroll(capture_panel(self)), "拍摄保存")
         splitter.addWidget(tabs)
@@ -265,16 +283,22 @@ class MainWindow(CameraControls, CameraProfileControls, ProfileControls, Capture
     def _display_panel(self) -> QWidget:
         return display_panel(self)
 
-    def _measurement_panel(self) -> QWidget:
-        return measurement_panel(self)
-
     def _build_toolbar(self) -> None:
         file_bar = QToolBar("常用操作", self)
         file_bar.setObjectName("mainToolbar")
         file_bar.setMovable(False)
+        file_bar.setStyleSheet("QToolButton { padding: 7px 4px; } QPushButton { padding: 7px 6px; }")
         self.addToolBar(file_bar)
         self.menuBar().hide()
         self.settings_menu = QMenu("设置", self)
+        self.objective_settings_menu = self.settings_menu.addMenu("物镜与标定")
+        self.objective_settings_menu.addAction("管理物镜…", self._manage_objectives)
+        self.objective_settings_menu.addAction("物镜标定…", self._show_calibration_settings)
+        self.camera_settings_menu = self.settings_menu.addMenu("相机与方案")
+        self.camera_settings_menu.addAction("设备设置…", self.device_settings_dialog.reveal)
+        self.camera_settings_menu.addSeparator()
+        naming_menu = self.settings_menu.addMenu("保存与命名")
+        naming_menu.addAction("命名规则…", self.naming_settings_dialog.reveal)
         self.settings_menu.addAction("快捷键设置…", self._configure_shortcuts)
         self.settings_button = QToolButton()
         self.settings_button.setText("设置")
@@ -283,12 +307,9 @@ class MainWindow(CameraControls, CameraProfileControls, ProfileControls, Capture
         file_bar.addWidget(self.settings_button)
         file_bar.addSeparator()
         file_bar.addWidget(QLabel("物镜"))
-        self.objective_combo = QComboBox()
-        self.objective_combo.setMinimumWidth(95)
-        self.objective_combo.setMaximumWidth(180)
-        self.objective_combo.setToolTip("选择实际使用的物镜，并载入对应的相机参数和标定")
-        self.objective_combo.currentIndexChanged.connect(self._objective_combo_changed)
-        file_bar.addWidget(self.objective_combo)
+        self.objective_selector = ObjectiveSelector(self)
+        self.objective_selector.objective_clicked.connect(self._objective_button_clicked)
+        file_bar.addWidget(self.objective_selector)
         file_bar.addSeparator()
         open_action = file_bar.addAction("打开图像…", self._open_image)
         self.snapshot_action = file_bar.addAction("拍照", self._capture_image)
@@ -330,51 +351,70 @@ class MainWindow(CameraControls, CameraProfileControls, ProfileControls, Capture
         self.tool_actions = {}
         hints = {
             "pan": "移动视野：按住左键拖动，移动放大后的图像；滚轮缩放，按住中键也可移动。",
-            "select": "选择标注：点击已画的点、文字、形状或测量线，在右侧查看，可删除所选对象。",
-            "measure": "测量长度：按住左键从起点拖到终点；结果按右侧勾选物镜的校准比例换算。",
+            "select": "选择标注：Ctrl＋单击多选、拖空白框选；拖动移动，角点等比例缩放，上方圆点旋转。",
+            "measure": "测量长度：左键拖出线段；结果记录当前画面的物镜和标定，切换物镜后保持原值。",
             "calibrate": "校准物镜：画面已暂停。沿标尺上一段已知长度拖线，再输入实际长度。",
             "marker": "标记点：点击要标记的位置，十字中心就是点击位置；旁边自动显示序号。",
             "line": "线条标注：按住左键拖出说明线；测量长度请使用“测量长度”。",
             "rect": "矩形框：按住左键从一个角拖到对角，框出需要说明的区域。",
             "ellipse": "椭圆框：按住左键拖动，圈出需要说明的区域。",
             "freehand": "自由画笔：按住左键绘制，松开完成。",
+            "polygon": "测量面积与平均 RGB：左键逐点圈选多边形，右键或双击完成；RGB 取完成时底图的显示像素（0–255，含边界），不含叠加标注；结果固定保存，Esc 取消。",
+            "angle": "测量角度：依次点击第一条边上的点、顶点、第二条边上的点；显示 0°–180° 夹角。右键或 Esc 取消。",
+            "polygon_shape": "多边形标注：左键逐点添加，右键完成且不添加点，双击添加最后一点并完成；只绘制轮廓，Esc 取消。",
             "text": "文字说明：点击文字放置位置，再输入说明内容。"}
         self.tool_hints = hints
         for name, label in (("pan", "移动视野"), ("select", "选择标注"),
                             ("measure", "测量长度"), ("calibrate", "用标尺校准物镜"),
-                            ("marker", "标记点"), ("line", "线条标注"), ("rect", "矩形框"),
-                            ("ellipse", "椭圆框"), ("freehand", "自由画笔"), ("text", "文字说明")):
+                            ("marker", "标记点"), ("line", "线条"), ("rect", "矩形"),
+                            ("ellipse", "椭圆"), ("freehand", "画笔"), ("polygon", "测量面积"),
+                            ("angle", "测量角度"), ("polygon_shape", "多边形"), ("text", "文字")):
             action = QAction(label, self)
+            if name not in ("pan", "calibrate"):
+                action.setIcon(annotation_icon(name))
             action.setCheckable(True)
             action.setChecked(name == "pan")
             action.triggered.connect(lambda checked=False, tool=name: self._activate_tool(tool))
             action.setToolTip(hints[name])
             group.addAction(action)
-            if name in ("pan", "select", "measure", "marker"):
+            if name in ("pan", "select"):
                 file_bar.addAction(action)
+                file_bar.widgetForAction(action).setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
             self.tool_actions[name] = action
             if name != "calibrate":
                 self.shortcut_actions["tool_" + name] = action
-        more = QToolButton()
-        more.setText("更多标注")
-        more.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-        menu = QMenu(more)
-        for name in ("text", "line", "rect", "ellipse", "freehand"):
-            menu.addAction(self.tool_actions[name])
-        more.setMenu(menu)
-        file_bar.addWidget(more)
-        self.measure_button.setDefaultAction(self.tool_actions["measure"])
-        annotation_buttons = []
-        for name in ("marker", "text", "line", "rect", "ellipse", "freehand"):
-            button = QToolButton()
+        self.import_image_action = QAction("图片…", self)
+        self.import_image_action.setToolTip("导入 PNG、JPG 等图片作为叠加标注，可设置不透明度、缩放和旋转")
+        self.import_image_action.triggered.connect(self._import_image_annotation)
+        self.shortcut_actions["import_image"] = self.import_image_action
+        self.import_image_action.setIcon(annotation_icon("image"))
+        self.import_image_button.setDefaultAction(self.import_image_action)
+        for name, button in self.annotation_tool_buttons.items():
             button.setDefaultAction(self.tool_actions[name])
-            button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
-            annotation_buttons.append(button)
-        for i in range(0, len(annotation_buttons), 2):
-            self.annotation_tools_layout.addWidget(button_row(*annotation_buttons[i:i + 2]))
-        undo = QAction("撤销", self)
+        self._update_annotation_color_button()
+        for name, title, callback, button in (
+                ("group", "组合", self.viewer.group_selected, self.group_button),
+                ("ungroup", "取消组合", self.viewer.ungroup_selected, self.ungroup_button)):
+            action = QAction(title, self)
+            action.setIcon(annotation_icon(name))
+            action.triggered.connect(callback)
+            button.setDefaultAction(action)
+            self.shortcut_actions[name] = action
+        undo = QAction(annotation_icon("undo"), "撤销", self)
         undo.triggered.connect(self.viewer.undo)
         self.shortcut_actions["undo"] = undo
+        redo = QAction(annotation_icon("redo"), "重做", self)
+        redo.triggered.connect(self.viewer.redo)
+        self.shortcut_actions["redo"] = redo
+        self.annotation_undo_button.setDefaultAction(undo)
+        self.annotation_redo_button.setDefaultAction(redo)
+        undo.setToolTip("撤销上一次标注操作")
+        redo.setToolTip("重做已撤销的标注操作")
+        def update_history():
+            undo.setEnabled(bool(self.viewer._history))
+            redo.setEnabled(bool(self.viewer._redo_history))
+        self.viewer.annotations_changed.connect(update_history)
+        update_history()
         delete = QAction("删除所选标注或测量", self.viewer)
         delete.setShortcutContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         delete.triggered.connect(self.viewer.delete_selected)
@@ -386,6 +426,7 @@ class MainWindow(CameraControls, CameraProfileControls, ProfileControls, Capture
         for name, action in self.shortcut_actions.items():
             if name != "delete":
                 self.addAction(action)
+        self._sync_annotation_selection()
         self._activate_tool("pan")
 
     def _configure_shortcuts(self):
@@ -415,8 +456,8 @@ class MainWindow(CameraControls, CameraProfileControls, ProfileControls, Capture
         quick = self.shortcuts.text("quick")
         self.quick_capture_section.header.setText("快速保存" + (" · " + quick if quick else ""))
         self.quick_capture_help.setText((f"按 {quick}，" if quick else "绑定快速保存快捷键后，") +
-            "按本页的格式、标注、目录和命名规则保存一张。")
-        self.quick_save_action.setToolTip("按右侧“拍摄保存”的格式、标注、目录及命名规则直接保存" + (f"（{quick}）" if quick else ""))
+            "按本页的格式、标注、目录及设置中的命名规则保存一张。")
+        self.quick_save_action.setToolTip("按右侧“拍摄保存”的选项和“设置 → 保存与命名”的规则直接保存" + (f"（{quick}）" if quick else ""))
         self.tool_hint.setText(self._current_tool_hint())
 
     def _current_tool_hint(self):
@@ -483,6 +524,7 @@ class MainWindow(CameraControls, CameraProfileControls, ProfileControls, Capture
         self.disconnect_button.setEnabled(False)
         self._set_camera_controls(False)
         self._profile_requests.clear()
+        self._pending_profile_key = None
         self._profile_verified = False
         self._refresh_profile_ui()
         self.source_badge.setText("采集已停止 · 保留最后画面")
@@ -511,7 +553,9 @@ class MainWindow(CameraControls, CameraProfileControls, ProfileControls, Capture
         self.frame_parameters_label.setText(
             f"{width}×{height} · {frame.pixel_format} · {exposure_label} · {gain_label}")
 
-    def _new_source(self) -> None:
+    def _new_source(self, *, preserve_annotations=False) -> None:
+        self._start_recovery_view()
+        self._pending_recovery = None
         self._file_calibration_override = None
         self.processor.freeze(None)
         self.raw_buffer.clear()
@@ -525,7 +569,12 @@ class MainWindow(CameraControls, CameraProfileControls, ProfileControls, Capture
             self.freeze_action.setChecked(False)
         self.freeze_action.setText("冻结画面")
         self._last_calibration = None
-        self.viewer.reset_document()
+        self.viewer.measurement_enabled = False
+        if preserve_annotations:
+            self.viewer.cancel_drawing()
+            self.viewer.set_calibration(Calibration())
+        else:
+            self.viewer.reset_document()
 
     def _refresh(self) -> None:
         self.processor.acknowledge()
@@ -549,18 +598,33 @@ class MainWindow(CameraControls, CameraProfileControls, ProfileControls, Capture
             geometry += (processed.frame.profile_context.get("objective_id"),)
             geometry_changed = self._geometry != geometry
             if self._geometry is not None and geometry_changed:
-                self.viewer.reset_document()
-                self.statusBar().showMessage("图像区域或方向变化，已清除标记；匹配的倍率标定继续使用。", 6000)
+                self._start_recovery_view()
+                if self._geometry[-1] != geometry[-1]:
+                    self.viewer.cancel_drawing()
+                    self.statusBar().showMessage("已保留原标注，请核对位置；原测量保留创建时的倍率和标定。", 7000)
+                else:
+                    self.viewer.reset_document()
+                    self.statusBar().showMessage("图像区域或方向变化，已清除标记；匹配的倍率标定继续使用。", 6000)
             self._geometry = geometry
             if self.current is None:
                 logging.getLogger(__name__).info("First displayed frame: source=%s format=%s shape=%s",
                                                  processed.frame.source, processed.frame.pixel_format,
                                                  processed.frame.raw.shape)
             self.current = processed
+            self._sync_annotation_context()
+            self.viewer.measurement_enabled = not self._profile_requests and not self._profile_failure
             self._update_processing_state()
             if geometry_changed:
                 self._apply_selected_calibration()
             self.viewer.set_frame(processed.rgb, processed)
+            if self._pending_recovery is not None:
+                annotations, calibration, length = self._pending_recovery
+                self._pending_recovery = None
+                self._file_calibration_override = calibration
+                self.viewer.annotations = annotations
+                self.viewer.set_scale_bar_length(length)
+                self.viewer.set_calibration(calibration)
+                self.statusBar().showMessage("已恢复离线视野和标注；可继续编辑或保存图像。", 10000)
             self._update_frame_parameters(processed.frame)
             self._update_histogram()
         if self.recorder is not None and self.current is not None:
@@ -675,27 +739,67 @@ class MainWindow(CameraControls, CameraProfileControls, ProfileControls, Capture
                                  self.black_box.value(), self.white_box.value(), True,
                                  self.current.luminance_histogram, self.histogram_mode.currentData())
 
+    def _sync_annotation_context(self):
+        context = self.current.frame.profile_context if self.current else {}
+        name = self._display_objective()
+        objective = self.store.objective(context.get("objective_id") or name)
+        self.viewer.objective_name = name
+        self.viewer.objective_id = context.get("objective_id", objective["id"] if objective else "")
+        magnification = context.get("magnification", objective["magnification"] if objective else None)
+        try:
+            magnification = float(magnification)
+            if not math.isfinite(magnification) or magnification <= 0:
+                magnification = None
+        except (TypeError, ValueError):
+            magnification = None
+        self.viewer.magnification = magnification
+
     def _annotations_changed(self) -> None:
         if not hasattr(self, "annotation_list"):
             return
-        with QSignalBlocker(self.annotation_list), QSignalBlocker(self.measurement_list):
+        with QSignalBlocker(self.annotation_list):
+            expanded = {self.annotation_list.topLevelItem(i).data(0, Qt.ItemDataRole.UserRole + 1):
+                        self.annotation_list.topLevelItem(i).isExpanded()
+                        for i in range(self.annotation_list.topLevelItemCount())}
             self.annotation_list.clear()
-            self.measurement_list.clear()
             labels = {"marker": "标记点", "line": "线条标注", "rect": "矩形框", "ellipse": "椭圆框",
-                      "text": "文字说明", "freehand": "自由画笔", "measure": "长度", "calibrate": "标定线"}
+                      "text": "文字说明", "freehand": "自由画笔", "measure": "长度", "calibrate": "标定线", "polygon": "面积", "angle": "角度", "polygon_shape": "多边形", "image": "图片"}
+            groups = {}
             for index, annotation in enumerate(self.viewer.annotations):
-                measured = annotation.kind in ("measure", "calibrate")
-                target = self.measurement_list if measured else self.annotation_list
-                detail = self.viewer.calibration.label(annotation.length_px) if measured else annotation.text
-                item = QListWidgetItem(f"{target.count() + 1:02d}  {labels.get(annotation.kind, annotation.kind)}  {detail}")
-                item.setData(Qt.ItemDataRole.UserRole, index)
-                target.addItem(item)
-                if index == self.viewer.selected:
-                    target.setCurrentItem(item)
+                measured = annotation.kind in ("measure", "calibrate", "polygon", "angle")
+                detail = (annotation.measurement_label(self.viewer.calibration) if measured else
+                          f"{annotation.image_name} · {annotation.image_opacity * 100:g}%" if annotation.kind == "image" else annotation.text)
+                parent = None
+                if annotation.group_id:
+                    if annotation.group_id not in groups:
+                        parent = QTreeWidgetItem(self.annotation_list, [f"组合 {len(groups) + 1}"])
+                        parent.setData(0, Qt.ItemDataRole.UserRole, tuple(i for i, a in enumerate(self.viewer.annotations)
+                                                                         if a.group_id == annotation.group_id))
+                        parent.setData(0, Qt.ItemDataRole.UserRole + 1, annotation.group_id)
+                        parent.setExpanded(expanded.get(annotation.group_id, True))
+                        groups[annotation.group_id] = parent
+                    parent = groups[annotation.group_id]
+                item = QTreeWidgetItem(parent if parent is not None else self.annotation_list,
+                                       [f"{index + 1:02d}  {labels.get(annotation.kind, annotation.kind)}  {detail}"])
+                item.setData(0, Qt.ItemDataRole.UserRole, (index,))
+                if parent is not None:
+                    item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
+                if annotation.kind == "image":
+                    item.setToolTip(0, f"{annotation.image_name}\n图片标注：可移动、缩放、旋转和组合；移动原文件后也能恢复标注。")
+                if annotation.text:
+                    item.setToolTip(0, annotation.text)
+                if measured:
+                    tooltip = detail + "\n原始测量值：移动、缩放和旋转不会重新计算；倍率及标定来自创建时的画面。"
+                    if annotation.kind == "polygon":
+                        tooltip += (f"\n平均 RGB：完成圈选时的底图显示像素，范围 0–255，含边界像素，共 {annotation.rgb_pixel_count} 像素；不含叠加标注。"
+                                    if annotation.mean_rgb is not None else "\n此面积记录未保存 RGB 统计。")
+                    item.setToolTip(0, tooltip)
+        self._sync_annotation_selection()
         calibration = self.viewer.calibration
         if self._last_calibration != calibration:
-            self.scale_box.setValue(calibration.units_per_pixel)
-            self.unit_combo.setCurrentText(calibration.unit)
+            with QSignalBlocker(self.scale_box), QSignalBlocker(self.unit_combo):
+                self.scale_box.setValue(calibration.units_per_pixel)
+                self.unit_combo.setCurrentText(calibration.unit)
             self._last_calibration = calibration
         self.calibration_label.setText(f"{calibration.units_per_pixel:.6g} {calibration.unit}/px"
                                        if calibration.units_per_pixel else f"{self.objective_list.currentText()} 尚未标定 · 长度显示为 px")
@@ -735,15 +839,131 @@ class MainWindow(CameraControls, CameraProfileControls, ProfileControls, Capture
                 self._error(f"比例尺设置保存失败：{exc}")
             self._update_scale_bar_button()
 
-    def _select_object_item(self, item):
-        if item is not None:
-            self.viewer.select_annotation(item.data(Qt.ItemDataRole.UserRole))
+    def _annotation_tree_selection_changed(self):
+        indices = set()
+        for item in self.annotation_list.selectedItems():
+            indices.update(item.data(0, Qt.ItemDataRole.UserRole) or ())
+        self.viewer.select_annotations(indices)
+        if self.viewer.tool != "select":
+            self.tool_actions["select"].trigger()
 
-    def _delete_object(self, measured):
-        index = self.viewer.selected
-        if 0 <= index < len(self.viewer.annotations):
-            if (self.viewer.annotations[index].kind in ("measure", "calibrate")) == measured:
-                self.viewer.delete_selected()
+    def _sync_annotation_selection(self):
+        if not hasattr(self, "annotation_list"):
+            return
+        with QSignalBlocker(self.annotation_list):
+            for index in range(self.annotation_list.topLevelItemCount()):
+                item = self.annotation_list.topLevelItem(index)
+                indices = set(item.data(0, Qt.ItemDataRole.UserRole) or ())
+                item.setSelected(bool(indices) and indices <= self.viewer.selection)
+        images = [self.viewer.annotations[i] for i in sorted(self.viewer.selection)
+                  if self.viewer.annotations[i].kind == "image"]
+        self.annotation_selection_label.setText(f"已选 {len(self.viewer.selection)} 项" if self.viewer.selection else "未选择")
+        self.image_opacity_row.setVisible(bool(images))
+        values = self.viewer.selection_transform_values()
+        self.annotation_transform_row.setVisible(values is not None)
+        if values is not None:
+            with QSignalBlocker(self.annotation_angle_box), QSignalBlocker(self.annotation_scale_box):
+                self.annotation_angle_box.setValue(values[0])
+                self.annotation_scale_box.setValue(values[1] * 100)
+        self.export_group_button.setEnabled(bool(self.viewer.selected_group_annotations()))
+        measurements = [a for i in sorted(self.viewer.selection)
+                        if (a := self.viewer.annotations[i]).kind in ("measure", "polygon", "calibrate", "angle")]
+        self.annotation_measurement_label.setVisible(bool(measurements))
+        if measurements:
+            detail = measurements[0].measurement_label(self.viewer.calibration).replace(" · 平均 RGB ", "\n平均 RGB ")
+            self.annotation_measurement_label.setText(
+                f"原始测量：{detail}" if len(measurements) == 1 else f"已选 {len(measurements)} 项测量 · 保留原始数值")
+        with QSignalBlocker(self.image_opacity_box):
+            self.image_opacity_box.setEnabled(bool(images))
+            if images:
+                self.image_opacity_box.setValue(images[0].image_opacity * 100)
+        if "group" in getattr(self, "shortcut_actions", {}):
+            self.shortcut_actions["group"].setEnabled(self.viewer.can_group())
+            self.shortcut_actions["ungroup"].setEnabled(any(self.viewer.annotations[i].group_id for i in self.viewer.selection))
+
+    def _image_opacity_changed(self):
+        self.viewer.set_image_opacity(self.image_opacity_box.value() / 100)
+
+    def _annotation_angle_changed(self):
+        try:
+            self.viewer.set_selection_transform(angle=self.annotation_angle_box.value())
+        except ValueError as exc:
+            self._error(str(exc))
+        self._sync_annotation_selection()
+
+    def _annotation_scale_changed(self):
+        try:
+            self.viewer.set_selection_transform(scale=self.annotation_scale_box.value() / 100)
+        except ValueError as exc:
+            self._error(str(exc))
+        self._sync_annotation_selection()
+
+    def _export_annotation_group(self):
+        annotations = self.viewer.selected_group_annotations()
+        if not annotations:
+            return
+        try:
+            # Snapshot before the dialog: no camera frame or capture metadata is read.
+            image = annotation_group_image(annotations, self.viewer.calibration)
+            filename, _ = QFileDialog.getSaveFileName(self, "导出标注组合", "标注组合.png", "PNG 图像 (*.png)")
+            if not filename:
+                return
+            if not filename.lower().endswith(".png"):
+                filename += ".png"
+            output = QSaveFile(filename)
+            if not output.open(QIODevice.OpenModeFlag.WriteOnly):
+                raise OSError(output.errorString())
+            if not image.save(output, "PNG"):
+                output.cancelWriting()
+                raise OSError("PNG 写入失败")
+            if not output.commit():
+                raise OSError(output.errorString())
+            self.statusBar().showMessage(f"标注组合已导出：{filename}", 6000)
+        except (OSError, ValueError) as exc:
+            self._error(f"标注组合导出失败：{exc}")
+
+    def _import_image_annotation(self):
+        if self.current is None or self._profile_requests:
+            self.statusBar().showMessage("请先连接相机或打开底图，并等待物镜切换完成，再导入图片标注。", 6000)
+            return
+        filename, _ = QFileDialog.getOpenFileName(self, "导入图片标注", "",
+            "图像 (*.png *.jpg *.jpeg *.bmp *.webp *.tif *.tiff)")
+        if not filename:
+            return
+        try:
+            data, image = load_image_asset(Path(filename))
+            if self.current is None or self._profile_requests:
+                self.statusBar().showMessage("视野正在变化，请等待画面稳定后重新导入。", 6000)
+                return
+            geometry = self._geometry
+            visible = self.viewer.mapToScene(self.viewer.viewport().rect()).boundingRect().intersected(self.viewer.sceneRect())
+            if visible.isEmpty():
+                visible = self.viewer.sceneRect()
+            scale = min(1., visible.width() * .7 / image.width(), visible.height() * .7 / image.height())
+            dialog = ImageAnnotationDialog(self, data, Path(filename).name, self.viewer.exported_image(), visible.center(), scale)
+            try:
+                if dialog.exec() != dialog.DialogCode.Accepted:
+                    return
+                annotation = dialog.annotation()
+            finally:
+                dialog.deleteLater()
+            if self.current is None or self._geometry != geometry or self._profile_requests:
+                self.statusBar().showMessage("视野已经变化，请在当前画面重新导入图片标注。", 6000)
+                return
+            self.viewer.add_annotation(annotation)
+            self.tool_actions["select"].trigger()
+        except (OSError, ValueError) as exc:
+            self._error(f"图片标注导入失败：{exc}")
+
+    def _show_calibration_settings(self):
+        self.calibration_dialog.reveal()
+
+    def _remember_camera_serial(self):
+        serial = self.serial_edit.text().strip()
+        try:
+            self.store.transaction(lambda: self.store.data["preferences"].update(manual_camera_serial=serial))
+        except (OSError, ValueError) as exc:
+            self._error(f"相机序列号设置保存失败：{exc}")
 
     def _activate_tool(self, tool):
         previous = self.viewer.tool
@@ -758,21 +978,18 @@ class MainWindow(CameraControls, CameraProfileControls, ProfileControls, Capture
         if tool == "calibrate" and previous != "calibrate":
             self._resume_after_calibration = not self.freeze_action.isChecked()
             self.freeze_action.setChecked(True)
-        if tool in ("measure", "calibrate"):
-            self.viewer.color = self._measurement_color
-        elif tool not in ("pan", "select"):
-            self.viewer.color = self._annotation_color
+        self.viewer.color = self._annotation_color
         self.viewer.set_tool(tool)
         self.tool_hint.setText(self._current_tool_hint())
-        if tool in ("measure", "calibrate"):
+        if tool == "calibrate":
+            self.calibration_dialog.hide()
+            self.statusBar().showMessage("沿图中已知长度的标尺拖线，随后输入实际长度。", 7000)
+        elif tool != "pan":
             self.tabs.setCurrentIndex(2)
-        elif tool not in ("pan", "select"):
-            self.tabs.setCurrentIndex(3)
 
     def _show_selected_annotation(self, index):
         if 0 <= index < len(self.viewer.annotations):
-            measured = self.viewer.annotations[index].kind in ("measure", "calibrate")
-            self.tabs.setCurrentIndex(2 if measured else 3)
+            self.tabs.setCurrentIndex(2)
 
     def _update_processing_state(self):
         source_gray = self.current is not None and self.current.frame.pixel_format.startswith("Mono")
@@ -793,13 +1010,18 @@ class MainWindow(CameraControls, CameraProfileControls, ProfileControls, Capture
         if ok and text.strip():
             self.viewer.add_annotation(Annotation("text", (point,), self.viewer.color, text.strip()))
 
+    def _update_annotation_color_button(self):
+        swatch = QPixmap(18, 18)
+        swatch.fill(QColor(self._annotation_color))
+        self.annotation_color_button.setIcon(QIcon(swatch))
+
     def _choose_color(self, scope="annotation") -> None:
-        initial = self._measurement_color if scope == "measure" else self._annotation_color
-        color = QColorDialog.getColor(QColor(initial), self, "测量线颜色" if scope == "measure" else "标注颜色")
+        color = QColorDialog.getColor(QColor(self._annotation_color), self, "标注颜色")
         if color.isValid():
-            if scope == "measure": self._measurement_color = color.name()
-            else: self._annotation_color = color.name()
-            self._activate_tool(self.viewer.tool)
+            self._annotation_color = color.name()
+            self.viewer.color = color.name()
+            self.viewer.set_selection_color(color.name())
+            self._update_annotation_color_button()
 
     def _open_image(self) -> None:
         if self.capture is not None:
@@ -938,6 +1160,8 @@ class MainWindow(CameraControls, CameraProfileControls, ProfileControls, Capture
             self.statusBar().showMessage("正在释放相机并完成保存…")
             event.ignore()
             return
+        for dialog in (self.calibration_dialog, self.device_settings_dialog, self.naming_settings_dialog):
+            dialog.close()
         self.timer.stop()
         self.naming_preview_timer.stop()
         self.processor.stop()

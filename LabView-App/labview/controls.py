@@ -7,7 +7,62 @@ from PySide6.QtCore import QEvent, QObject, QPointF, Qt, QSignalBlocker, Signal
 from PySide6.QtGui import QWheelEvent
 from PySide6.QtWidgets import (QAbstractSpinBox, QApplication, QComboBox,
                               QLineEdit, QScrollArea, QSlider, QWidget,
-                              QHeaderView, QTreeWidget, QTreeWidgetItem)
+                              QHeaderView, QTreeWidget, QTreeWidgetItem, QButtonGroup,
+                              QHBoxLayout, QToolButton, QFrame)
+
+
+class ObjectiveSelector(QScrollArea):
+    """One-click objective buttons; long custom lists remain horizontally accessible."""
+    objective_clicked = Signal(str)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFrameShape(QFrame.Shape.NoFrame)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setFixedHeight(34)
+        self._content = QWidget()
+        self._layout = QHBoxLayout(self._content)
+        self._layout.setContentsMargins(0, 0, 0, 0)
+        self._layout.setSpacing(2)
+        self.setWidget(self._content)
+        self._group = QButtonGroup(self)
+        self._group.setExclusive(True)
+        self._group.buttonClicked.connect(lambda button: self.objective_clicked.emit(button.property("objectiveId")))
+        self.buttons = {}
+        self._options = []
+
+    def configure(self, options, selected):
+        if options != self._options:
+            for button in self.buttons.values():
+                self._group.removeButton(button)
+                self._layout.removeWidget(button)
+                button.hide()
+                button.deleteLater()
+            self.buttons = {}
+            for name, identity in options:
+                button = QToolButton(self._content)
+                button.setText(name)
+                button.setCheckable(True)
+                button.setProperty("objectiveId", identity)
+                button.setStyleSheet("QToolButton { padding: 7px 6px; min-width: 26px; }")
+                button.setToolTip(f"切换到 {name}，载入该物镜的相机参数和标定。物镜较多时可滚轮横向浏览。")
+                self._group.addButton(button)
+                self._layout.addWidget(button)
+                self.buttons[identity] = button
+            self._options = list(options)
+            self._content.adjustSize()
+            self.setFixedWidth(min(420, self._content.sizeHint().width()))
+        button = self.buttons.get(selected)
+        if button is not None:
+            button.setChecked(True)
+            self.ensureWidgetVisible(button, 0, 0)
+
+    def wheelEvent(self, event):
+        delta = event.angleDelta().x() or event.angleDelta().y()
+        bar = self.horizontalScrollBar()
+        bar.setValue(bar.value() - delta)
+        event.accept()
 
 
 class ObjectiveList(QTreeWidget):

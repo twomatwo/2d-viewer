@@ -13,7 +13,7 @@ MAX_SEQUENCE = 2_000_000_000
 DATE_FORMATS = ("%Y%m%d", "%Y-%m-%d", "%Y_%m_%d")
 DEFAULT_NAMING = {"template": "{date}_{time}_{seq}_{objective}", "date_format": DATE_FORMATS[0],
     "sequence_start": 1, "sequence_next": 1, "sequence_step": 1, "sequence_digits": 4,
-    "reset_daily": False, "sequence_date": ""}
+    "reset_daily": False, "sequence_date": "", "sample_text": ""}
 _FORMATTER = Formatter()
 _INVALID = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 _RESERVED = {"CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"} | {
@@ -40,7 +40,7 @@ def naming_settings(value=None) -> dict:
             raise ValueError("序号设置超出有效范围")
     if result["date_format"] not in DATE_FORMATS or type(result["reset_daily"]) is not bool:
         raise ValueError("日期或序号重置设置无效")
-    if not isinstance(result["sequence_date"], str) or not isinstance(result["template"], str):
+    if not isinstance(result["sample_text"], str) or not isinstance(result["sequence_date"], str) or not isinstance(result["template"], str):
         raise ValueError("命名规则格式无效")
     render_name(result, datetime(2026, 10, 27, 12, 30, 45), "50x", result["sequence_next"])
     return result
@@ -69,7 +69,8 @@ def render_name(settings: dict, now: datetime, objective: str, sequence: int) ->
                 parts.append(values[field])
     except (ValueError, KeyError) as exc:
         raise ValueError(f"命名模板无效：{exc}") from exc
-    return validate_filename("".join(parts))
+    prefix = settings.get("sample_text", "").strip()
+    return validate_filename((prefix + "_" if prefix else "") + "".join(parts))
 
 
 def effective_sequence(settings: dict, now: datetime) -> int:

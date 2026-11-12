@@ -13,7 +13,7 @@ from PySide6.QtCore import QThread, Signal
 
 from .models import Frame, LatestBuffer
 from .camera_features import apply_features, capture_features
-from .camera_profiles import configuration, differences, validate_configuration
+from .camera_profiles import configuration, differences, validate_configuration, same_configuration_values
 
 
 LOG = logging.getLogger(__name__)
@@ -90,6 +90,25 @@ class CaptureWorker(QThread):
         self._profile_context = dict(self._profile_context,
             generation=self._configuration_generation,
             temporary=not self._profile_baseline or bool(differences(self._profile_baseline, self._configuration)))
+
+    def _try_context_switch(self, command: dict) -> bool:
+        """No SDK access: identical acquisition values need neither stop nor rescan."""
+        if not self._configuration or command.get("__snapshot") or "__context" not in command:
+            return False
+        target = command.get("__profile")
+        if not command.get("__context_only") and not (
+                target is not None and same_configuration_values(target, self._configuration)):
+            return False
+        self._profile_context = dict(command["__context"])
+        self._profile_baseline = command.get("__baseline")
+        self._configuration_generation += 1
+        self._update_profile_status()
+        request_id = command.get("__request_id", "")
+        if request_id:
+            self.operation_finished.emit({"request_id": request_id, "ok": True, "error": "",
+                "configuration": self._configuration, "context": dict(self._profile_context)})
+        LOG.debug("Objective context switched without acquisition restart: %s", self._profile_context)
+        return True
 
     def run(self) -> None:
         try:
@@ -279,6 +298,8 @@ class CaptureWorker(QThread):
                         changes = self._commands.get_nowait()
                     except Empty:
                         break
+                    if self._try_context_switch(changes):
+                        continue
                     camera.EndAcquisition()
                     acquiring = False
                     request_id = changes.pop("__request_id", "")
@@ -379,7 +400,7 @@ class CaptureWorker(QThread):
 
                 image = None
                 try:
-                    image = camera.GetNextImage(500)
+                    image = camera.GetNextImage(100)
                     last_image = monotonic()
                     if not image.IsIncomplete():
                         raw = image.GetNDArray().copy()

@@ -141,6 +141,25 @@ def differences(saved: dict, actual: dict) -> list[str]:
     return list(dict.fromkeys(changed))
 
 
+def same_configuration_values(target: dict, actual: dict) -> bool:
+    """Reuse only the same camera and every captured value, including selector states.
+
+    Unlike differences(), this does not ignore auto outputs or inactive features.
+    """
+    if (not target or not actual or not actual.get("camera", {}).get("serial") or
+            target.get("camera") != actual.get("camera") or
+            target.get("schema") != actual.get("schema")):
+        return False
+    expected, current = target.get("settings", {}), actual.get("settings", {})
+    if not expected or expected.keys() != current.keys() or any(
+            not equal_value(value, current[name]) for name, value in expected.items()):
+        return False
+    expected_rows = {feature_key(row): row["value"] for row in target.get("features", [])}
+    current_rows = {feature_key(row): row["value"] for row in actual.get("features", [])}
+    return (expected_rows.keys() == current_rows.keys() and all(
+        equal_value(value, current_rows[key]) for key, value in expected_rows.items()))
+
+
 def migrate_preset(payload: dict) -> dict:
     """Retain old camera values; computer processing never enters new profiles."""
     camera = dict(payload.get("camera", {}))

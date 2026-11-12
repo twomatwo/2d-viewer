@@ -10,6 +10,7 @@ import numpy as np
 import tifffile
 
 from .models import Annotation, Calibration, Frame, ProcessedFrame
+from .annotation_geometry import mapped_points
 
 
 def write_json(path: Path, data: dict) -> None:
@@ -35,10 +36,19 @@ def export_metadata(processed: ProcessedFrame, annotations: list[Annotation],
             "camera_settings_basis": "per-frame chunks for listed fields; other fields are last parameter readback",
             "display_settings": asdict(processed.settings), "calibration": asdict(calibration),
             "camera_configuration": frame.configuration, "objective_profile": frame.profile_context,
-            "annotations": [dict(asdict(a), length_px=a.length_px,
-                                 measured_length=a.length_px * calibration.units_per_pixel
-                                 if calibration.units_per_pixel else None) for a in annotations],
-            "annotation_coordinate_space": "display pixels after orientation transforms",
+            "annotations": [dict(asdict(a), display_points=[[p.x(), p.y()] for p in mapped_points(a)],
+                                 area_px=a.area_px,
+                                 measured_area=a.area_px * a.measurement_scale(calibration).units_per_pixel ** 2
+                                 if a.measurement_scale(calibration).units_per_pixel and a.kind == "polygon" else None,
+                                 length_px=a.length_px,
+                                 measured_length=a.length_px * a.measurement_scale(calibration).units_per_pixel
+                                 if a.measurement_scale(calibration).units_per_pixel and a.kind in ("measure", "calibrate") else None,
+                                 angle_degrees=a.angle_degrees,
+                                 measurement_label=a.measurement_label(calibration)
+                                 if a.kind in ("measure", "polygon", "calibrate", "angle") else "") for a in annotations],
+            "annotation_coordinate_space": "points are original annotation pixels; transform maps them to display pixels after image orientation",
+            "measurement_values_basis": "original annotation points and creation-time calibration; annotation transforms preserve readings",
+            "region_rgb_basis": "mean of displayed base RGB pixels (0-255) at area completion, including boundary pixels, excluding overlays; frozen with measurement",
             "display_shape": list(processed.rgb.shape)}
 
 

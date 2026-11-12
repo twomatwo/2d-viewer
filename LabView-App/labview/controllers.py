@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import asdict, replace
 from datetime import datetime
 from pathlib import Path
 import csv
@@ -15,9 +15,10 @@ from PySide6.QtWidgets import QFileDialog, QInputDialog
 from .discovery import DiscoveryWorker
 from .exporting import export_metadata, save_raw, save_png
 from .models import Calibration, DisplaySettings, ProcessedFrame
+from .annotation_geometry import mapped_points
 from .processing import decode_rgb, render_rgb, histogram, luminance_histogram
 from .recording import VideoRecorder
-from .settings_store import sampling_context
+from .settings_store import display_from_dict, sampling_context
 from .viewer import rgb_image
 from .capture_naming import effective_sequence, naming_settings, render_name
 
@@ -249,10 +250,20 @@ class CameraControls:
 
 class ProfileControls:
     def _restore_preferences(self):
-        self._set_display_settings(DisplaySettings())
+        try:
+            settings = display_from_dict(self.store.data["preferences"].get("display_settings", {}))
+        except (ValueError, TypeError, AttributeError):
+            settings = DisplaySettings()
+        self._set_display_settings(settings)
 
     def _remember_display(self):
-        # Computer adjustments are session-local; never part of camera profiles.
+        # Application preferences remain independent of objective camera profiles.
+        values = asdict(self.settings)
+        if self.store.data["preferences"].get("display_settings") != values:
+            try:
+                self.store.transaction(lambda: self.store.data["preferences"].update(display_settings=values))
+            except (OSError, ValueError) as exc:
+                self._error(f"显示配置保存失败：{exc}")
         if hasattr(self, "reset_display_button"):
             self.reset_display_button.setEnabled(self.settings != DisplaySettings())
         self._update_processing_state()
@@ -345,13 +356,26 @@ class ProfileControls:
         try:
             with Path(filename).open("w", encoding="utf-8-sig", newline="") as stream:
                 writer = csv.writer(stream)
-                writer.writerow(["序号", "类型", "文字", "长度_px", "实际长度", "单位", "物镜配置", "坐标"])
-                calibration = self.viewer.calibration
-                for index, item in enumerate((a for a in self.viewer.annotations if a.kind == "measure"), 1):
-                    measured = item.length_px * calibration.units_per_pixel if calibration.units_per_pixel else ""
-                    writer.writerow([index, item.kind, item.text, item.length_px, measured,
-                                     calibration.unit if calibration.units_per_pixel else "px",
-                                     self._display_objective(), json.dumps(item.points)])
+                writer.writerow(["序号", "类型", "文字", "长度_px", "实际长度", "单位", "物镜配置", "坐标", "面积_px2", "实际面积", "面积单位", "镜头倍率", "创建时每像素长度", "标定单位", "组合", "显示变换", "显示坐标", "角度_deg", "平均R", "平均G", "平均B", "RGB像素数", "RGB取样依据"])
+                for index, item in enumerate((a for a in self.viewer.annotations if a.kind in ("measure", "polygon", "angle")), 1):
+                    calibration = item.measurement_scale(self.viewer.calibration)
+                    length = item.kind == "measure"
+                    area = item.kind == "polygon"
+                    measured = item.length_px * calibration.units_per_pixel if length and calibration.units_per_pixel else ""
+                    writer.writerow([index, item.kind, item.text, item.length_px if length else "", measured,
+                                     (calibration.unit if calibration.units_per_pixel else "px") if length else "",
+                                     item.objective_name or "倍率未记录", json.dumps(item.points),
+                                     item.area_px if area else "",
+                                     item.area_px * calibration.units_per_pixel ** 2
+                                     if area and calibration.units_per_pixel else "",
+                                     (calibration.unit + "²" if calibration.units_per_pixel else "px²")
+                                     if area else "", item.magnification,
+                                     calibration.units_per_pixel, calibration.unit, item.group_id,
+                                     json.dumps(item.transform), json.dumps([[p.x(), p.y()] for p in mapped_points(item)]),
+                                     item.angle_degrees if item.kind == "angle" else "",
+                                     *(item.mean_rgb if item.mean_rgb is not None else ("", "", "")),
+                                     item.rgb_pixel_count if item.mean_rgb is not None else "",
+                                     "完成时底图显示RGB（0–255，含边界，不含标注）" if item.mean_rgb is not None else ""])
         except OSError as exc: self._error(str(exc))
 
 
@@ -376,6 +400,7 @@ class CaptureControls:
 
     def _capture_naming_changed(self, *args):
         candidate = dict(self.snapshot_naming, template=self.capture_name_template.text(),
+            sample_text=self.capture_sample_text.text(),
             date_format=self.capture_date_format.currentData(),
             sequence_next=self.capture_next_sequence.value(), sequence_digits=self.capture_sequence_digits.value(),
             sequence_step=self.capture_sequence_step.value(), sequence_start=self.capture_sequence_start.value(),
@@ -431,6 +456,8 @@ class CaptureControls:
             self.capture_name_preview.setText("命名规则需要修改：\n" + str(exc))
             self.capture_name_preview.setStyleSheet("color: #ffd166;")
             valid = False
+        self.naming_settings_preview.setText(self.capture_name_preview.text())
+        self.naming_settings_preview.setStyleSheet(self.capture_name_preview.styleSheet())
         if hasattr(self, "quick_save_action"):
             self.quick_save_action.setEnabled(valid)
 

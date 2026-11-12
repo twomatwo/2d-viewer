@@ -117,6 +117,74 @@ class Annotation:
     points: tuple[tuple[float, float], ...]
     color: str = "#ffd166"
     text: str = ""
+    calibration: Calibration | None = None
+    objective_name: str = ""
+    objective_id: str = ""
+    magnification: float | None = None
+    group_id: str = ""
+    transform: tuple[float, float, float, float, float, float] = (1, 0, 0, 1, 0, 0)
+
+    image_name: str = ""
+    image_data: str = field(default="", repr=False)
+    image_opacity: float = 1.0
+    mean_rgb: tuple[float, float, float] | None = None
+    rgb_pixel_count: int = 0
+
+    def __post_init__(self):
+        if (not isinstance(self.rgb_pixel_count, int) or isinstance(self.rgb_pixel_count, bool) or
+                self.rgb_pixel_count < 0 or
+                self.mean_rgb is not None and (len(self.mean_rgb) != 3 or self.rgb_pixel_count <= 0 or
+                    any(not math.isfinite(v) or not 0 <= v <= 255 for v in self.mean_rgb))):
+            raise ValueError("区域 RGB 测量记录无效")
+        if not math.isfinite(self.image_opacity) or not 0 <= self.image_opacity <= 1:
+            raise ValueError("图片不透明度必须在 0% 到 100% 之间")
+        if self.kind == "image" and (not isinstance(self.image_data, str) or not self.image_data or
+                                      len(self.points) != 2 or
+                                      any(len(point) != 2 or not all(math.isfinite(v) for v in point) for point in self.points) or
+                                      self.points[0][0] == self.points[1][0] or self.points[0][1] == self.points[1][1]):
+            raise ValueError("图片标注数据或范围无效")
+        if not isinstance(self.image_name, str):
+            raise ValueError("图片标注名称无效")
+        if (len(self.transform) != 6 or not all(math.isfinite(v) for v in self.transform) or
+                abs(self.transform[0] * self.transform[3] - self.transform[1] * self.transform[2]) < 1e-12):
+            raise ValueError("标注变换矩阵无效")
+        if not isinstance(self.group_id, str) or len(self.group_id) > 128:
+            raise ValueError("标注组合标识无效")
+
+    def measurement_scale(self, fallback: Calibration) -> Calibration:
+        return self.calibration if self.calibration is not None else fallback
+
+    def measurement_label(self, fallback: Calibration) -> str:
+        scale = self.measurement_scale(fallback)
+        value = (f"{self.angle_degrees:.3f}°" if self.kind == "angle" and self.angle_degrees is not None else
+                 "角度未完成" if self.kind == "angle" else
+                 scale.area_label(self.area_px) if self.kind == "polygon" else scale.label(self.length_px))
+        objective = (f"{self.magnification:g}×" if self.magnification is not None else
+                     self.objective_name or "倍率未记录")
+        if scale.units_per_pixel == 0 and self.kind != "angle":
+            objective += "，未标定"
+        result = f"{value}（{objective}）"
+        if self.kind == "polygon" and self.mean_rgb is not None:
+            result += " · 平均 RGB " + ", ".join(f"{v:.2f}" for v in self.mean_rgb)
+        return result
+
+    @property
+    def angle_degrees(self) -> float | None:
+        if self.kind != "angle" or len(self.points) != 3:
+            return None
+        first, vertex, last = self.points
+        a = (first[0] - vertex[0], first[1] - vertex[1])
+        b = (last[0] - vertex[0], last[1] - vertex[1])
+        if min(math.hypot(*a), math.hypot(*b)) < 1e-9:
+            return None
+        return math.degrees(math.atan2(abs(a[0] * b[1] - a[1] * b[0]), a[0] * b[0] + a[1] * b[1]))
+
+    @property
+    def area_px(self) -> float:
+        if self.kind not in ("polygon", "polygon_shape") or len(self.points) < 3:
+            return 0.0
+        import cv2
+        return float(cv2.contourArea(np.asarray(self.points, dtype=np.float32)))
 
     @property
     def length_px(self) -> float:
@@ -140,6 +208,11 @@ class Calibration:
         if not math.isfinite(pixels) or not math.isfinite(known_length) or pixels <= 0 or known_length <= 0:
             raise ValueError("Reference and physical lengths must be positive")
         return cls(known_length / pixels, unit)
+
+    def area_label(self, pixels: float) -> str:
+        if self.units_per_pixel > 0:
+            return f"{pixels * self.units_per_pixel ** 2:.3f} {self.unit}²"
+        return f"{pixels:.2f} px²"
 
     def label(self, pixels: float) -> str:
         if self.units_per_pixel > 0:
