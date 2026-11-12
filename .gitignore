@@ -20,3 +20,13 @@ recovery/
 /data/
 /dependencies/
 *.whl
+
+# Disposable local checks and tool caches.
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+/.check-*
+/.layout-*
+/.measurement-*

@@ -22,7 +22,6 @@
 ├── setup.ps1
 ├── run.ps1
 ├── Start 2D Viewer.cmd
-├── CODEX_START_HERE.md   # 开发维护说明
 └── README.md
 ```
 
@@ -31,3 +30,5 @@
 新克隆的源码版默认将设置、照片、日志及恢复记录写入 `data/`。已有本机 `LabView-App` 数据目录继续识别，现有配置无需迁移；该旧目录已整体忽略，不再作为源码目录。
 
 新配置名为 `settings/twodviewer.json`；已有 `settings/labview.json` 继续原位读取和更新。安装版继续沿用 `%LOCALAPPDATA%\LabView` 数据目录。为兼容旧设置、标定库和拍摄记录，旧序列化标识保留；安装器 AppId 不变，更新及卸载不删除用户数据。
+
+开发与维护约束见 [开发说明](docs/development.md)。当前文档只保留有效操作，旧版本变更记录可查看 Git 历史。
